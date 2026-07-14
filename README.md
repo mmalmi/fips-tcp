@@ -107,8 +107,8 @@ The TypeScript endpoint tests include a self-contained structural FIPS service
 endpoint and two real `FipsNode` instances over an in-memory test transport. The
 unpublished test-only `@fips/core` package is pinned to an exact public
 [`mmalmi/fips-ts`](https://github.com/mmalmi/fips-ts) commit. The Rust endpoint
-test uses published `fips-core` 0.3.98 and its real loopback service-datagram
-API.
+test uses the published `fips-core` release selected in `rust/Cargo.lock` and
+its real loopback service-datagram API.
 
 The test matrix covers byte-exact shared vectors, malformed input, both
 same-language stacks, Rust↔TypeScript in both client/server directions, SYN,
