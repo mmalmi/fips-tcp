@@ -100,6 +100,8 @@ test("TCP stream runs through two real FipsNode service endpoints", async () => 
 
   const client = await aTcp.connect(toHex(bIdentity.publicKey));
   const server = await eventually(async () => bTcp.accept());
+  expect(await aTcp.peer(client)).toBe(toHex(bIdentity.publicKey));
+  expect(await bTcp.peer(server)).toBe(toHex(aIdentity.publicKey));
 
   const request = Uint8Array.from({ length: 8192 }, (_, index) => index % 251);
   expect(await aTcp.write(client, request)).toBe(request.length);

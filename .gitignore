@@ -1,6 +1,5 @@
 /rust/target/
 /ts/node_modules/
-/ts/dist/
 /ts/coverage/
 /coverage/
 .env

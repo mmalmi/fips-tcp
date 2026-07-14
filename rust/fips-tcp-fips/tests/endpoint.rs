@@ -36,6 +36,10 @@ async fn tcp_stream_runs_through_real_fips_endpoint_service_datagrams() {
     let server = tcp.accept().expect("accept loopback connection");
     assert_eq!(tcp.state(client), Some(State::Established));
     assert_eq!(tcp.state(server), Some(State::Established));
+    assert_eq!(tcp.peer(client), Some(local));
+    assert_eq!(tcp.peer(server), Some(local));
+    assert_eq!(tcp.ports(client).expect("client ports").1, FSP_SERVICE_PORT);
+    assert_eq!(tcp.ports(server).expect("server ports").0, FSP_SERVICE_PORT);
 
     tcp.write(client, b"actual FIPS service datagram", 10)
         .await

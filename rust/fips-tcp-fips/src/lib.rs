@@ -118,6 +118,18 @@ impl FipsTcpEndpoint {
         self.stack.is_read_closed(id)
     }
 
+    /// Return the authenticated FIPS identity bound to this stream.
+    pub fn peer(&self, id: ConnectionId) -> Option<PeerIdentity> {
+        self.stack
+            .peer(id)
+            .and_then(|npub| PeerIdentity::from_npub(npub).ok())
+    }
+
+    /// Return the stream's internal `(local, remote)` TCP ports.
+    pub fn ports(&self, id: ConnectionId) -> Option<(u16, u16)> {
+        self.stack.ports(id)
+    }
+
     async fn flush(&mut self) -> Result<(), AdapterError> {
         for outbound in self.stack.drain_outbound() {
             let peer = PeerIdentity::from_npub(&outbound.peer)?;

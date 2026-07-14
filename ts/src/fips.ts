@@ -94,6 +94,16 @@ export class FipsTcpEndpoint {
     return this.enqueue(() => this.stack.isReadClosed(id));
   }
 
+  /** Return the authenticated FIPS identity bound to this stream. */
+  async peer(id: ConnectionId): Promise<string | undefined> {
+    return this.enqueue(() => this.stack.peer(id));
+  }
+
+  /** Return the stream's internal `[local, remote]` TCP ports. */
+  async ports(id: ConnectionId): Promise<readonly [number, number] | undefined> {
+    return this.enqueue(() => this.stack.ports(id));
+  }
+
   async dispose(): Promise<void> {
     await this.operation;
     this.unregister();

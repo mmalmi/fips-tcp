@@ -84,6 +84,12 @@ const stream = await tcp.connect(remotePubkeyHex);
 await tcp.write(stream, new TextEncoder().encode("record"));
 ```
 
+Both standard adapters expose `peer(stream)` so servers can bind accepted
+streams to the authenticated FIPS identity, plus `ports(stream)` for advanced
+diagnostics. TypeScript distribution files are tracked, so consumers can pin
+the `ts` package at an immutable public Git revision without a local build or
+sibling checkout.
+
 ## Verification
 
 ```sh

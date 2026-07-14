@@ -57,6 +57,10 @@ test("TCP stream runs through the structural FIPS service endpoint API", async (
   try {
     const client = await aTcp.connect("peer-b");
     const server = await eventually(async () => bTcp.accept());
+    expect(await aTcp.peer(client)).toBe("peer-b");
+    expect(await bTcp.peer(server)).toBe("peer-a");
+    expect((await aTcp.ports(client))?.[1]).toBe(fspServicePort);
+    expect((await bTcp.ports(server))?.[0]).toBe(fspServicePort);
 
     const request = Uint8Array.from({ length: 8192 }, (_, index) => index % 251);
     expect(await aTcp.write(client, request)).toBe(request.length);
