@@ -25,7 +25,10 @@ Reference mapping:
 The Rust and TypeScript state machines are carrier-independent sans-I/O cores:
 they accept `(peer, segment bytes, time)` and emit `(peer, segment bytes)`.
 FIPS is one adapter for that contract, and its explicitly configured FSP
-service port is separate from the TCP ports encoded in every segment.
+service port remains a separate wire field from the TCP ports encoded in every
+segment. For a simpler application API, the standard adapter mirrors the FSP
+service number as its hidden TCP listening port and manages ephemeral client
+ports internally.
 
 Carrier independence alone does not make TCP/FIPS wire-compatible with a
 standard TCP stack. smoltcp expects TCP inside IP and calculates an IP

@@ -11,6 +11,12 @@ receive windows, retransmission, Reno congestion control, orderly close, and
 reset behavior. A connection is identified by
 `(remote FIPS identity, local TCP port, remote TCP port)`.
 
+Applications configure only that one FSP service number. The standard endpoint
+adapters automatically listen on the numerically matching internal TCP port;
+client-side ephemeral TCP ports and all TCP multiplexing stay private to the
+stack. The low-level sans-I/O cores retain explicit TCP ports for advanced
+embeddings and standard-stack interoperability tests.
+
 ## Repository layout
 
 - `protocol`: the TCP/FIPS v1 contract and shared byte-exact wire vectors.
@@ -45,11 +51,12 @@ store-and-forward service.
 The sans-I/O cores emit complete TCP/FIPS segment bodies. An embedding can
 carry them over any FIPS transport or tunnel because only the endpoint service
 datagram API is visible to TCP/FIPS. The FSP service port passed to the adapter
-is separate from the TCP listener and connection ports inside each segment.
+remains a separate field from the TCP ports inside each segment, but the
+standard adapter mirrors its value as the hidden TCP listening port.
 
 Rust applications using the standard endpoint adapter create a
-`FipsTcpEndpoint`, listen or connect, and call `receive(now_ms)` from their
-event loop:
+`FipsTcpEndpoint`, connect or accept, and call `receive(now_ms)` from their event
+loop:
 
 ```rust,no_run
 use std::sync::Arc;
@@ -60,7 +67,7 @@ use fips_tcp_fips::FipsTcpEndpoint;
 # async fn example(peer: PeerIdentity) -> Result<(), Box<dyn std::error::Error>> {
 let endpoint = Arc::new(FipsEndpoint::builder().without_system_tun().bind().await?);
 let mut tcp = FipsTcpEndpoint::bind(endpoint, 39_017, Config::default(), 0x1234).await?;
-let stream = tcp.connect(peer, 443, 0).await?;
+let stream = tcp.connect(peer, 0).await?;
 tcp.write(stream, b"record", 1).await?;
 # Ok(())
 # }
@@ -73,8 +80,7 @@ runtime package dependency:
 import { FipsTcpEndpoint } from "@fips/tcp";
 
 const tcp = new FipsTcpEndpoint(fipsNode, 39_017);
-await tcp.listen(443);
-const stream = await tcp.connect(remotePubkeyHex, 443);
+const stream = await tcp.connect(remotePubkeyHex);
 await tcp.write(stream, new TextEncoder().encode("record"));
 ```
 

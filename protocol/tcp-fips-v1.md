@@ -8,6 +8,12 @@ is adapter configuration, not part of this wire protocol. The authenticated
 FIPS source identity replaces the source network address. The destination is
 the peer selected by the FIPS endpoint send API.
 
+The standard per-service adapters use the selected FSP service port as the
+server-side TCP destination port as well. This is an API convention that gives
+applications one service number to configure; the TCP header still carries its
+own destination port and an ephemeral client source port. Low-level embeddings
+may use other TCP port mappings without changing the segment encoding.
+
 A connection is identified locally by:
 
 ```text

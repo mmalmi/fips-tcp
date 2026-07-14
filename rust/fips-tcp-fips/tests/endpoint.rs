@@ -25,16 +25,15 @@ async fn tcp_stream_runs_through_real_fips_endpoint_service_datagrams() {
     )
     .await
     .expect("bind TCP service");
-    tcp.listen(443).expect("listen");
 
-    let client = tcp.connect(local, 443, 0).await.expect("connect");
+    let client = tcp.connect(local, 0).await.expect("connect");
     for _ in 0..3 {
         tokio::time::timeout(Duration::from_secs(2), tcp.receive(0))
             .await
             .expect("handshake datagram timed out")
             .expect("receive handshake datagram");
     }
-    let server = tcp.accept(443).expect("accept loopback connection");
+    let server = tcp.accept().expect("accept loopback connection");
     assert_eq!(tcp.state(client), Some(State::Established));
     assert_eq!(tcp.state(server), Some(State::Established));
 

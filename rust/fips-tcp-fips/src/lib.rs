@@ -21,7 +21,7 @@ pub struct FipsTcpEndpoint {
 }
 
 impl FipsTcpEndpoint {
-    /// Bind TCP/FIPS to an explicitly selected outer FSP service port.
+    /// Bind one FSP service and open its numerically matching TCP listener.
     pub async fn bind(
         endpoint: Arc<FipsEndpoint>,
         fsp_service_port: u16,
@@ -31,31 +31,30 @@ impl FipsTcpEndpoint {
         if fsp_service_port == 0 {
             return Err(AdapterError::InvalidServicePort);
         }
+        let mut stack = Stack::new(config, isn_seed);
+        stack.listen(fsp_service_port)?;
         let receiver = endpoint.register_service_receiver(fsp_service_port).await?;
         Ok(Self {
             endpoint,
             receiver,
             fsp_service_port,
-            stack: Stack::new(config, isn_seed),
+            stack,
             receive_batch: Vec::new(),
         })
     }
 
-    pub fn listen(&mut self, port: u16) -> Result<(), StackError> {
-        self.stack.listen(port)
-    }
-
-    pub fn accept(&mut self, port: u16) -> Option<ConnectionId> {
-        self.stack.accept(port)
+    pub fn accept(&mut self) -> Option<ConnectionId> {
+        self.stack.accept(self.fsp_service_port)
     }
 
     pub async fn connect(
         &mut self,
         peer: PeerIdentity,
-        remote_port: u16,
         now_ms: u64,
     ) -> Result<ConnectionId, AdapterError> {
-        let id = self.stack.connect(peer.npub(), remote_port, now_ms)?;
+        let id = self
+            .stack
+            .connect(peer.npub(), self.fsp_service_port, now_ms)?;
         self.flush().await?;
         Ok(id)
     }

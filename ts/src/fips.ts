@@ -21,7 +21,7 @@ export interface FipsDatagramEndpoint {
   }): Promise<void>;
 }
 
-/** Thin async adapter between a TCP/FIPS stack and a FIPS service endpoint. */
+/** One FSP service with an automatically matching internal TCP listener. */
 export class FipsTcpEndpoint {
   private readonly stack: Stack;
   private readonly unregister: () => void;
@@ -35,6 +35,7 @@ export class FipsTcpEndpoint {
   ) {
     checkFspServicePort(fspServicePort);
     this.stack = new Stack(config, isnSeed);
+    this.stack.listen(fspServicePort);
     this.unregister = endpoint.registerService(fspServicePort, (context) =>
       this.enqueue(async () => {
         this.stack.input(context.src, context.payload, Date.now());
@@ -43,17 +44,13 @@ export class FipsTcpEndpoint {
     );
   }
 
-  async listen(port: number): Promise<void> {
-    await this.enqueue(() => this.stack.listen(port));
+  async accept(): Promise<ConnectionId | undefined> {
+    return this.enqueue(() => this.stack.accept(this.fspServicePort));
   }
 
-  async accept(port: number): Promise<ConnectionId | undefined> {
-    return this.enqueue(() => this.stack.accept(port));
-  }
-
-  async connect(peer: string, remotePort: number, nowMs = Date.now()): Promise<ConnectionId> {
+  async connect(peer: string, nowMs = Date.now()): Promise<ConnectionId> {
     return this.enqueue(async () => {
-      const id = this.stack.connect(peer, remotePort, nowMs);
+      const id = this.stack.connect(peer, this.fspServicePort, nowMs);
       await this.flush();
       return id;
     });
