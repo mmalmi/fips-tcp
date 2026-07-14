@@ -3,7 +3,7 @@
 TCP/FIPS is an independent implementation. smoltcp is used as a readable,
 well-tested behavior reference, not as a dependency and not as an IP layer.
 
-The pinned local reference checkout is:
+The pinned reference revision is:
 
 ```text
 repository: https://github.com/smoltcp-rs/smoltcp.git

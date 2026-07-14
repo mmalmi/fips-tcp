@@ -6,8 +6,8 @@
 - Keep the Rust and TypeScript implementations behaviorally and byte-for-byte
   compatible. Every wire or state-machine change requires shared vectors plus
   bidirectional live interop coverage.
-- Treat `~/src/smoltcp` as a reference and test oracle, not a runtime dependency
-  of the public TCP/FIPS libraries.
+- Treat the smoltcp revision pinned in `SMOLTCP_REFERENCE.md` as a reference and
+  test oracle, not a runtime dependency of the public TCP/FIPS libraries.
 - Prefer deterministic sans-I/O state machines. Clocks, randomness, packet
   delivery, loss, duplication, and reordering must remain injectable in tests.
 - Bound send queues, receive queues, reassembly, retransmission attempts, and

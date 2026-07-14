@@ -6,3 +6,4 @@ members = ["fips-tcp", "fips-tcp-fips", "interop-driver"]
 edition = "2024"
 license = "0BSD"
 rust-version = "1.91"
+repository = "https://github.com/mmalmi/fips-tcp"

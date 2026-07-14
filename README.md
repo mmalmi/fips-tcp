@@ -94,14 +94,16 @@ pnpm --dir ts build
 pnpm --dir ts test
 ```
 
-The TypeScript endpoint integration test links the sibling `fips-ts` checkout
-at `../fips-ts`; those packages are not published to npm as of 2026-07-14. The
-test runs two real `FipsNode` instances over their memory transport. The Rust
-endpoint test uses published `fips-core` 0.3.96 and its real loopback service
-datagram API.
+The TypeScript endpoint tests include a self-contained structural FIPS service
+endpoint and two real `FipsNode` instances over an in-memory test transport. The
+unpublished test-only `@fips/core` package is pinned to an exact public
+[`mmalmi/fips-ts`](https://github.com/mmalmi/fips-ts) commit. The Rust endpoint
+test uses published `fips-core` 0.3.98 and its real loopback service-datagram
+API.
 
 The test matrix covers byte-exact shared vectors, malformed input, both
 same-language stacks, Rust↔TypeScript in both client/server directions, SYN,
 data, and FIN loss, reversal, duplication, sequence wrap, bounded buffers and
 connections, flow control, lost window updates, zero-window probes, RTO
-backoff, fast retransmit, RST, TIME-WAIT, and real FIPS endpoint carriage.
+backoff, fast retransmit, RST, TIME-WAIT, structural TypeScript FIPS endpoint
+carriage, and real TypeScript/Rust FIPS endpoint carriage.

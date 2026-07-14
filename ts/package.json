@@ -13,6 +13,13 @@
   },
   "files": ["dist", "src"],
   "license": "0BSD",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmalmi/fips-tcp.git",
+    "directory": "ts"
+  },
+  "homepage": "https://github.com/mmalmi/fips-tcp#readme",
+  "bugs": "https://github.com/mmalmi/fips-tcp/issues",
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -20,8 +27,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@fips/core": "link:../../fips-ts/packages/core",
-    "@fips/transport-memory": "link:../../fips-ts/packages/transport-memory",
+    "@fips/core": "github:mmalmi/fips-ts#df86f0ad519c174e9331a38c568e68dc51900cd8&path:packages/core",
     "@types/node": "^24.10.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"

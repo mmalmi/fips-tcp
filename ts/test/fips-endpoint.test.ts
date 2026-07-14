@@ -1,55 +1,73 @@
-import { FipsNode, generateIdentity, toHex } from "@fips/core";
-import { MemoryHub, MemoryTransport } from "@fips/transport-memory";
-import { afterEach, expect, test } from "vitest";
+import { expect, test } from "vitest";
 
-import { FipsTcpEndpoint } from "../src/index.js";
+import {
+  FipsDatagramEndpoint,
+  FipsServiceContext,
+  FipsTcpEndpoint,
+} from "../src/index.js";
 
-interface RunningPair {
-  aNode: FipsNode;
-  bNode: FipsNode;
-  aTcp: FipsTcpEndpoint;
-  bTcp: FipsTcpEndpoint;
+type ServiceHandler = (context: FipsServiceContext) => Promise<void> | void;
+
+class MemoryFipsEndpoint implements FipsDatagramEndpoint {
+  private readonly services = new Map<number, ServiceHandler>();
+  private remote?: MemoryFipsEndpoint;
+
+  constructor(private readonly identity: string) {}
+
+  connect(remote: MemoryFipsEndpoint): void {
+    this.remote = remote;
+  }
+
+  registerService(port: number, handler: ServiceHandler): () => void {
+    if (this.services.has(port)) throw new Error(`service ${port} is already registered`);
+    this.services.set(port, handler);
+    return () => this.services.delete(port);
+  }
+
+  async sendDatagram(args: {
+    dst: string;
+    srcPort?: number;
+    dstPort: number;
+    payload: Uint8Array;
+  }): Promise<void> {
+    const remote = this.remote;
+    if (remote === undefined || remote.identity !== args.dst) throw new Error("unknown peer");
+    const handler = remote.services.get(args.dstPort);
+    if (handler === undefined) throw new Error(`service ${args.dstPort} is not registered`);
+    const context: FipsServiceContext = {
+      src: this.identity,
+      srcPort: args.srcPort ?? 0,
+      dstPort: args.dstPort,
+      payload: args.payload.slice(),
+    };
+    queueMicrotask(() => void handler(context));
+  }
 }
 
-const running: RunningPair[] = [];
 const fspServicePort = 39_017;
 
-afterEach(async () => {
-  await Promise.all(
-    running.splice(0).map(async ({ aNode, bNode, aTcp, bTcp }) => {
-      await Promise.all([aTcp.dispose(), bTcp.dispose()]);
-      await Promise.all([aNode.stop(), bNode.stop()]);
-    }),
-  );
-});
-
-test("TCP stream runs through two real FipsNode service endpoints", async () => {
-  const [aIdentity, bIdentity] = await Promise.all([generateIdentity(), generateIdentity()]);
-  const hub = new MemoryHub();
-  const aNode = new FipsNode({
-    identity: aIdentity,
-    transports: [new MemoryTransport({ hub })],
-  });
-  const bNode = new FipsNode({
-    identity: bIdentity,
-    transports: [new MemoryTransport({ hub })],
-  });
+test("TCP stream runs through the structural FIPS service endpoint API", async () => {
+  const aNode = new MemoryFipsEndpoint("peer-a");
+  const bNode = new MemoryFipsEndpoint("peer-b");
+  aNode.connect(bNode);
+  bNode.connect(aNode);
   const aTcp = new FipsTcpEndpoint(aNode, fspServicePort, {}, 0x1111n);
   const bTcp = new FipsTcpEndpoint(bNode, fspServicePort, {}, 0x2222n);
-  running.push({ aNode, bNode, aTcp, bTcp });
-  await Promise.all([aNode.start(), bNode.start()]);
-  await aNode.connect({ transport: "memory", addr: toHex(bIdentity.publicKey) });
 
-  const client = await aTcp.connect(toHex(bIdentity.publicKey));
-  const server = await eventually(async () => bTcp.accept());
+  try {
+    const client = await aTcp.connect("peer-b");
+    const server = await eventually(async () => bTcp.accept());
 
-  const request = Uint8Array.from({ length: 8192 }, (_, index) => index % 251);
-  expect(await aTcp.write(client, request)).toBe(request.length);
-  expect(await collect(bTcp, server, request.length)).toEqual(request);
+    const request = Uint8Array.from({ length: 8192 }, (_, index) => index % 251);
+    expect(await aTcp.write(client, request)).toBe(request.length);
+    expect(await collect(bTcp, server, request.length)).toEqual(request);
 
-  const response = new TextEncoder().encode("reply over authenticated FIPS service datagrams");
-  expect(await bTcp.write(server, response)).toBe(response.length);
-  expect(await collect(aTcp, client, response.length)).toEqual(response);
+    const response = new TextEncoder().encode("reply over FIPS service datagrams");
+    expect(await bTcp.write(server, response)).toBe(response.length);
+    expect(await collect(aTcp, client, response.length)).toEqual(response);
+  } finally {
+    await Promise.all([aTcp.dispose(), bTcp.dispose()]);
+  }
 }, 15_000);
 
 async function collect(

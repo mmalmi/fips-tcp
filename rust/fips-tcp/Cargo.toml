@@ -5,6 +5,7 @@ description = "TCP reliable streams over authenticated FIPS datagrams"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
 
 [dependencies]
 

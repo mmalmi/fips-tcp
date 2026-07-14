@@ -5,6 +5,7 @@ description = "FIPS endpoint adapter for TCP/FIPS streams"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
 
 [dependencies]
 fips-core = "0.3.98"
