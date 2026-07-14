@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-fips-core = "0.3.97"
+fips-core = "0.3.98"
 fips-tcp = { version = "0.1.0", path = "../fips-tcp" }
 
 [dev-dependencies]
