@@ -1,0 +1,28 @@
+[
+  {
+    "name": "syn-with-mss-and-fips-version",
+    "hex": "c00001bb11223344000000007002ffff0000000002040400fe040100",
+    "srcPort": 49152,
+    "dstPort": 443,
+    "seq": 287454020,
+    "ack": null,
+    "flags": ["syn"],
+    "window": 65535,
+    "mss": 1024,
+    "version": 1,
+    "payloadHex": ""
+  },
+  {
+    "name": "ack-with-payload",
+    "hex": "01bbc0005566778811223345501080000000000068656c6c6f",
+    "srcPort": 443,
+    "dstPort": 49152,
+    "seq": 1432778632,
+    "ack": 287454021,
+    "flags": ["ack"],
+    "window": 32768,
+    "mss": null,
+    "version": null,
+    "payloadHex": "68656c6c6f"
+  }
+]

@@ -1,0 +1,12 @@
+[package]
+name = "fips-tcp-interop-driver"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fips-tcp = { path = "../fips-tcp" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["fips-tcp", "fips-tcp-fips", "interop-driver"]
+
+[workspace.package]
+edition = "2024"
+license = "0BSD"
+rust-version = "1.91"

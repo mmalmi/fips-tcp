@@ -1,0 +1,29 @@
+{
+  "name": "@fips/tcp",
+  "version": "0.1.0",
+  "description": "TCP reliable streams over authenticated FIPS datagrams",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "license": "0BSD",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@fips/core": "link:../../fips-ts/packages/core",
+    "@fips/transport-memory": "link:../../fips-ts/packages/transport-memory",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
+  }
+}

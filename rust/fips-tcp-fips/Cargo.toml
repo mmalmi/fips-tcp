@@ -1,0 +1,14 @@
+[package]
+name = "fips-tcp-fips"
+version = "0.1.0"
+description = "FIPS endpoint adapter for TCP/FIPS streams"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fips-core = "0.3.96"
+fips-tcp = { version = "0.1.0", path = "../fips-tcp" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "time"] }
