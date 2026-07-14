@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["fips-tcp", "fips-tcp-fips", "interop-driver"]
+members = ["fips-tcp", "fips-tcp-endpoint", "interop-driver"]
 
 [workspace.package]
 edition = "2024"

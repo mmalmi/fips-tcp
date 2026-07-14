@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use fips_core::{FipsEndpoint, PeerIdentity};
 use fips_tcp::{Config, State};
-use fips_tcp_fips::FipsTcpEndpoint;
+use fips_tcp_endpoint::FipsTcpEndpoint;
 
 const FSP_SERVICE_PORT: u16 = 39_017;
 

@@ -21,12 +21,15 @@ embeddings and standard-stack interoperability tests.
 
 - `protocol`: the TCP/FIPS v1 contract and shared byte-exact wire vectors.
 - `rust/fips-tcp`: dependency-free Rust sans-I/O state machine.
-- `rust/fips-tcp-fips`: async adapter for `fips_core::FipsEndpoint`.
+- `rust/fips-tcp-endpoint`: async adapter for `fips_core::FipsEndpoint`.
 - `rust/interop-driver`: JSON-lines test driver used by TypeScript interop tests.
 - `ts`: `@fips/tcp`, including the TypeScript sans-I/O state machine and a
   structural `FipsNode` adapter.
 - `SMOLTCP_REFERENCE.md`: the pinned smoltcp reference revision and the
   behavior mapped from it.
+
+The briefly published `fips-tcp-fips` 0.1.0 package is superseded by the
+clearer `fips-tcp-endpoint` name. New Rust consumers should use the latter.
 
 The Rust and TypeScript implementations use the same wire encoding and expose
 the same deterministic clock-driven operations. Neither implementation calls
@@ -62,7 +65,7 @@ loop:
 use std::sync::Arc;
 use fips_core::{FipsEndpoint, PeerIdentity};
 use fips_tcp::Config;
-use fips_tcp_fips::FipsTcpEndpoint;
+use fips_tcp_endpoint::FipsTcpEndpoint;
 
 # async fn example(peer: PeerIdentity) -> Result<(), Box<dyn std::error::Error>> {
 let endpoint = Arc::new(FipsEndpoint::builder().without_system_tun().bind().await?);

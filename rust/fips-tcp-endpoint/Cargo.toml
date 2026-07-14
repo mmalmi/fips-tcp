@@ -1,5 +1,5 @@
 [package]
-name = "fips-tcp-fips"
+name = "fips-tcp-endpoint"
 version = "0.1.0"
 description = "FIPS endpoint adapter for TCP/FIPS streams"
 edition.workspace = true
