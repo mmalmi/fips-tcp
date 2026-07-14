@@ -13,6 +13,3 @@ pub mod wire;
 
 pub use stack::Stack;
 pub use types::{Config, ConnectionId, Outbound, StackError, State};
-
-/// FSP service port reserved for TCP/FIPS segments.
-pub const FIPS_TCP_SERVICE_PORT: u16 = 6;

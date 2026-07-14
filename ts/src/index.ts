@@ -12,7 +12,6 @@ export {
 
 export { Stack } from "./stack.js";
 export {
-  FIPS_TCP_SERVICE_PORT,
   FipsTcpEndpoint,
   type FipsDatagramEndpoint,
   type FipsServiceContext,

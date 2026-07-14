@@ -4,11 +4,12 @@ TCP/FIPS provides reliable ordered byte streams directly over authenticated
 FIPS service datagrams. It has no IP layer, IP addresses, TUN device, TLS, or
 second encryption layer.
 
-The outer carrier is always FSP service port `6`. Inside that authenticated
-peer-to-peer channel, the normal TCP header supplies connection ports, byte
-sequence numbers, cumulative acknowledgments, receive windows, retransmission,
-Reno congestion control, orderly close, and reset behavior. A connection is
-identified by `(remote FIPS identity, local TCP port, remote TCP port)`.
+The application explicitly chooses the outer FSP service port when binding the
+adapter. Inside that authenticated peer-to-peer channel, the normal TCP header
+supplies connection ports, byte sequence numbers, cumulative acknowledgments,
+receive windows, retransmission, Reno congestion control, orderly close, and
+reset behavior. A connection is identified by
+`(remote FIPS identity, local TCP port, remote TCP port)`.
 
 ## Repository layout
 
@@ -43,7 +44,8 @@ store-and-forward service.
 
 The sans-I/O cores emit complete TCP/FIPS segment bodies. An embedding can
 carry them over any FIPS transport or tunnel because only the endpoint service
-datagram API is visible to TCP/FIPS.
+datagram API is visible to TCP/FIPS. The FSP service port passed to the adapter
+is separate from the TCP listener and connection ports inside each segment.
 
 Rust applications using the standard endpoint adapter create a
 `FipsTcpEndpoint`, listen or connect, and call `receive(now_ms)` from their
@@ -57,7 +59,7 @@ use fips_tcp_fips::FipsTcpEndpoint;
 
 # async fn example(peer: PeerIdentity) -> Result<(), Box<dyn std::error::Error>> {
 let endpoint = Arc::new(FipsEndpoint::builder().without_system_tun().bind().await?);
-let mut tcp = FipsTcpEndpoint::bind(endpoint, Config::default(), 0x1234).await?;
+let mut tcp = FipsTcpEndpoint::bind(endpoint, 39_017, Config::default(), 0x1234).await?;
 let stream = tcp.connect(peer, 443, 0).await?;
 tcp.write(stream, b"record", 1).await?;
 # Ok(())
@@ -70,7 +72,7 @@ runtime package dependency:
 ```ts
 import { FipsTcpEndpoint } from "@fips/tcp";
 
-const tcp = new FipsTcpEndpoint(fipsNode);
+const tcp = new FipsTcpEndpoint(fipsNode, 39_017);
 await tcp.listen(443);
 const stream = await tcp.connect(remotePubkeyHex, 443);
 await tcp.write(stream, new TextEncoder().encode("record"));

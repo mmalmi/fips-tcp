@@ -1,8 +1,6 @@
 import { Stack } from "./stack.js";
 import { Config, ConnectionId, State } from "./types.js";
 
-export const FIPS_TCP_SERVICE_PORT = 6;
-
 export interface FipsServiceContext {
   src: string;
   srcPort: number;
@@ -31,11 +29,13 @@ export class FipsTcpEndpoint {
 
   constructor(
     private readonly endpoint: FipsDatagramEndpoint,
+    private readonly fspServicePort: number,
     config: Partial<Config> = {},
     isnSeed: bigint | number = 1n,
   ) {
+    checkFspServicePort(fspServicePort);
     this.stack = new Stack(config, isnSeed);
-    this.unregister = endpoint.registerService(FIPS_TCP_SERVICE_PORT, (context) =>
+    this.unregister = endpoint.registerService(fspServicePort, (context) =>
       this.enqueue(async () => {
         this.stack.input(context.src, context.payload, Date.now());
         await this.flush();
@@ -106,8 +106,8 @@ export class FipsTcpEndpoint {
     for (const outbound of this.stack.drainOutbound()) {
       await this.endpoint.sendDatagram({
         dst: outbound.peer,
-        srcPort: FIPS_TCP_SERVICE_PORT,
-        dstPort: FIPS_TCP_SERVICE_PORT,
+        srcPort: this.fspServicePort,
+        dstPort: this.fspServicePort,
         payload: outbound.bytes,
       });
     }
@@ -120,5 +120,11 @@ export class FipsTcpEndpoint {
       () => undefined,
     );
     return result;
+  }
+}
+
+function checkFspServicePort(port: number): void {
+  if (!Number.isInteger(port) || port <= 0 || port > 0xffff) {
+    throw new Error("FIPS service port must be an integer between 1 and 65535");
   }
 }

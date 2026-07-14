@@ -2,9 +2,11 @@
 
 ## Carrier and Addressing
 
-TCP/FIPS segments are FSP service datagram bodies sent from and to FIPS service
-port `6`. The authenticated FIPS source identity replaces the source network
-address. The destination is the peer selected by the FIPS endpoint send API.
+TCP/FIPS segments are FSP service datagram bodies. The embedding application
+chooses the non-zero FIPS service port and both peers must agree on it; the port
+is adapter configuration, not part of this wire protocol. The authenticated
+FIPS source identity replaces the source network address. The destination is
+the peer selected by the FIPS endpoint send API.
 
 A connection is identified locally by:
 

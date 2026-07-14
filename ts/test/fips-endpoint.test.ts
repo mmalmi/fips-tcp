@@ -12,6 +12,7 @@ interface RunningPair {
 }
 
 const running: RunningPair[] = [];
+const fspServicePort = 39_017;
 
 afterEach(async () => {
   await Promise.all(
@@ -33,8 +34,8 @@ test("TCP stream runs through two real FipsNode service endpoints", async () => 
     identity: bIdentity,
     transports: [new MemoryTransport({ hub })],
   });
-  const aTcp = new FipsTcpEndpoint(aNode, {}, 0x1111n);
-  const bTcp = new FipsTcpEndpoint(bNode, {}, 0x2222n);
+  const aTcp = new FipsTcpEndpoint(aNode, fspServicePort, {}, 0x1111n);
+  const bTcp = new FipsTcpEndpoint(bNode, fspServicePort, {}, 0x2222n);
   running.push({ aNode, bNode, aTcp, bTcp });
   await Promise.all([aNode.start(), bNode.start()]);
   await aNode.connect({ transport: "memory", addr: toHex(bIdentity.publicKey) });

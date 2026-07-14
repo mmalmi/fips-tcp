@@ -5,6 +5,8 @@ use fips_core::{FipsEndpoint, PeerIdentity};
 use fips_tcp::{Config, State};
 use fips_tcp_fips::FipsTcpEndpoint;
 
+const FSP_SERVICE_PORT: u16 = 39_017;
+
 #[tokio::test]
 async fn tcp_stream_runs_through_real_fips_endpoint_service_datagrams() {
     let endpoint = Arc::new(
@@ -15,9 +17,14 @@ async fn tcp_stream_runs_through_real_fips_endpoint_service_datagrams() {
             .expect("bind embedded endpoint"),
     );
     let local = PeerIdentity::from_npub(endpoint.npub()).expect("parse local identity");
-    let mut tcp = FipsTcpEndpoint::bind(endpoint.clone(), Config::default(), 0x1234_5678)
-        .await
-        .expect("bind TCP service");
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config::default(),
+        0x1234_5678,
+    )
+    .await
+    .expect("bind TCP service");
     tcp.listen(443).expect("listen");
 
     let client = tcp.connect(local, 443, 0).await.expect("connect");

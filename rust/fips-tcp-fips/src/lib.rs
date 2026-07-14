@@ -12,27 +12,30 @@ use fips_core::{
 };
 use fips_tcp::{Config, ConnectionId, Stack, StackError, State};
 
-pub use fips_tcp::FIPS_TCP_SERVICE_PORT;
-
 pub struct FipsTcpEndpoint {
     endpoint: Arc<FipsEndpoint>,
     receiver: FipsEndpointServiceReceiver,
+    fsp_service_port: u16,
     stack: Stack<String>,
     receive_batch: Vec<FipsEndpointServiceDatagram>,
 }
 
 impl FipsTcpEndpoint {
+    /// Bind TCP/FIPS to an explicitly selected outer FSP service port.
     pub async fn bind(
         endpoint: Arc<FipsEndpoint>,
+        fsp_service_port: u16,
         config: Config,
         isn_seed: u64,
     ) -> Result<Self, AdapterError> {
-        let receiver = endpoint
-            .register_service_receiver(FIPS_TCP_SERVICE_PORT)
-            .await?;
+        if fsp_service_port == 0 {
+            return Err(AdapterError::InvalidServicePort);
+        }
+        let receiver = endpoint.register_service_receiver(fsp_service_port).await?;
         Ok(Self {
             endpoint,
             receiver,
+            fsp_service_port,
             stack: Stack::new(config, isn_seed),
             receive_batch: Vec::new(),
         })
@@ -97,7 +100,7 @@ impl FipsTcpEndpoint {
             .await
             .ok_or(AdapterError::Closed)?;
         for datagram in self.receive_batch.drain(..) {
-            debug_assert_eq!(datagram.destination_port, FIPS_TCP_SERVICE_PORT);
+            debug_assert_eq!(datagram.destination_port, self.fsp_service_port);
             self.stack.input(
                 datagram.source_peer.npub(),
                 datagram.data.as_slice(),
@@ -122,8 +125,8 @@ impl FipsTcpEndpoint {
             self.endpoint
                 .send_datagram(
                     peer,
-                    FIPS_TCP_SERVICE_PORT,
-                    FIPS_TCP_SERVICE_PORT,
+                    self.fsp_service_port,
+                    self.fsp_service_port,
                     outbound.bytes,
                 )
                 .await?;
@@ -135,6 +138,7 @@ impl FipsTcpEndpoint {
 #[derive(Debug)]
 pub enum AdapterError {
     Closed,
+    InvalidServicePort,
     Fips(FipsEndpointError),
     Identity(IdentityError),
     Tcp(StackError),
@@ -144,6 +148,7 @@ impl fmt::Display for AdapterError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Closed => formatter.write_str("FIPS endpoint service receiver closed"),
+            Self::InvalidServicePort => formatter.write_str("FIPS service port must be non-zero"),
             Self::Fips(error) => write!(formatter, "FIPS endpoint error: {error}"),
             Self::Identity(error) => write!(formatter, "FIPS identity error: {error}"),
             Self::Tcp(error) => write!(formatter, "TCP/FIPS error: {error}"),
