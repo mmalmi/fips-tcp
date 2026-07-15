@@ -79,6 +79,11 @@ tcp.write(stream, b"record", 1).await?;
 # }
 ```
 
+For optional same-host composition, `bind_with_capability` takes a generic
+FIPS `LocalInstanceCapability`. FIPS announces it only after the adapter owns
+the FSP port and withdraws it when the adapter is dropped. Ordinary `bind`
+remains independent of local rendezvous, so standalone services are unchanged.
+
 Services that permit only one stream per authenticated peer set Rust
 `Config::max_connections_per_peer` or TypeScript `maxConnectionsPerPeer` to
 `1`. Pending handshakes, established streams, FIN-WAIT-2, other closing
@@ -162,8 +167,8 @@ The TypeScript endpoint tests include a self-contained structural FIPS service
 endpoint and two real `FipsNode` instances over an in-memory test transport. The
 unpublished test-only `@fips/core` package is pinned to an exact public
 [`mmalmi/fips-ts`](https://github.com/mmalmi/fips-ts) commit. The Rust endpoint
-test uses the published `fips-core` release selected in `rust/Cargo.lock` and
-its real loopback service-datagram API.
+test uses the `fips-core` version selected in `rust/Cargo.lock` and its real
+loopback service-datagram API.
 
 The test matrix covers byte-exact shared vectors, malformed input, both
 same-language stacks, Rust↔TypeScript in both client/server directions, SYN,

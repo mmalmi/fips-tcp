@@ -6,9 +6,10 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
+use fips_core::discovery::local::LocalInstanceCapability;
 use fips_core::{
     FipsEndpoint, FipsEndpointError, FipsEndpointServiceDatagram, FipsEndpointServiceReceiver,
-    IdentityError, PeerIdentity,
+    IdentityError, LocalServiceRegistrationError, PeerIdentity,
 };
 use fips_tcp::{Config, ConnectionId, MarkerStatus, SendMarker, Stack, StackError, State};
 
@@ -50,11 +51,7 @@ impl FipsTcpEndpoint {
         config: Config,
         isn_seed: u64,
     ) -> Result<Self, AdapterError> {
-        if fsp_service_port == 0 {
-            return Err(AdapterError::InvalidServicePort);
-        }
-        let mut stack = Stack::new(config, isn_seed);
-        stack.listen(fsp_service_port)?;
+        let stack = Self::listening_stack(fsp_service_port, config, isn_seed)?;
         let receiver = endpoint.register_service_receiver(fsp_service_port).await?;
         Ok(Self {
             endpoint,
@@ -63,6 +60,45 @@ impl FipsTcpEndpoint {
             stack,
             receive_batch: Vec::new(),
         })
+    }
+
+    /// Bind one FSP service and advertise it to authenticated same-host peers.
+    ///
+    /// FIPS publishes the capability only after it owns the service port and
+    /// withdraws it when this adapter's receiver is dropped.
+    pub async fn bind_with_capability(
+        endpoint: Arc<FipsEndpoint>,
+        capability: LocalInstanceCapability,
+        config: Config,
+        isn_seed: u64,
+    ) -> Result<Self, CapabilityBindError> {
+        let fsp_service_port = capability
+            .fsp_port
+            .ok_or(LocalServiceRegistrationError::ServiceCapabilityMissingPort)?;
+        let stack = Self::listening_stack(fsp_service_port, config, isn_seed)?;
+        let receiver = endpoint
+            .register_service_receiver_with_capability(capability)
+            .await?;
+        Ok(Self {
+            endpoint,
+            receiver,
+            fsp_service_port,
+            stack,
+            receive_batch: Vec::new(),
+        })
+    }
+
+    fn listening_stack(
+        fsp_service_port: u16,
+        config: Config,
+        isn_seed: u64,
+    ) -> Result<Stack<String>, AdapterError> {
+        if fsp_service_port == 0 {
+            return Err(AdapterError::InvalidServicePort);
+        }
+        let mut stack = Stack::new(config, isn_seed);
+        stack.listen(fsp_service_port)?;
+        Ok(stack)
     }
 
     pub fn accept(&mut self) -> Option<ConnectionId> {
@@ -254,5 +290,43 @@ impl From<StackError> for AdapterError {
 impl From<IdentityError> for AdapterError {
     fn from(error: IdentityError) -> Self {
         Self::Identity(error)
+    }
+}
+
+/// Failure to prepare TCP state or register a capability-advertised FSP port.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum CapabilityBindError {
+    Adapter(AdapterError),
+    Registration(LocalServiceRegistrationError),
+}
+
+impl fmt::Display for CapabilityBindError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Adapter(error) => error.fmt(formatter),
+            Self::Registration(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for CapabilityBindError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Adapter(error) => Some(error),
+            Self::Registration(error) => Some(error),
+        }
+    }
+}
+
+impl From<AdapterError> for CapabilityBindError {
+    fn from(error: AdapterError) -> Self {
+        Self::Adapter(error)
+    }
+}
+
+impl From<LocalServiceRegistrationError> for CapabilityBindError {
+    fn from(error: LocalServiceRegistrationError) -> Self {
+        Self::Registration(error)
     }
 }
