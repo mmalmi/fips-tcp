@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 2026-07-15
 
 - Harden TCP connection admission, reset validation, retransmission, flow
   control, bounded close lifecycles, and failed-connect rollback.
