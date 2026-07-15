@@ -1,6 +1,7 @@
 import { Config, State } from "./types.js";
 import { Segment } from "./wire.js";
 import { ConnectionUpdate } from "./connection-types.js";
+import { SendProgress } from "./marker.js";
 export declare class Connection {
     state: State;
     readonly peer: string;
@@ -22,6 +23,7 @@ export declare class Connection {
     private duplicateAcks;
     private closeRequested;
     private readonly persist;
+    readonly sendProgress: SendProgress;
     private finWait2UntilMs;
     private timeWaitUntilMs;
     private constructor();

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
 use crate::connection_types::{ReassemblySegment, TrackedSegment};
+use crate::marker::{MarkerStatus, SendMarker, SendProgress};
 use crate::reno::Reno;
 use crate::rtt::RttEstimator;
 use crate::segment::{SegmentHeader, build_segment};
@@ -12,6 +13,7 @@ use crate::wire::{FIPS_VERSION, Flags, Segment};
 include!("stack_types.rs");
 include!("stack_abort.rs");
 include!("connection_reset.rs");
+include!("stack_marker.rs");
 
 pub struct Stack<P> {
     config: Config,
@@ -179,12 +181,7 @@ where
         bytes: &[u8],
         now_ms: u64,
     ) -> Result<usize, StackError> {
-        let (accepted, segments) = self
-            .connections
-            .get_mut(&id)
-            .ok_or(StackError::UnknownConnection)?
-            .write(bytes, now_ms, &self.config)?;
-        self.emit(id, segments)?;
+        let (accepted, _) = self.write_with_marker(id, bytes, now_ms)?;
         Ok(accepted)
     }
 
@@ -407,6 +404,7 @@ impl<P: Clone> Connection<P> {
             next_zero_window_probe_ms: None,
             zero_window_probes: 0,
             read_closed: false,
+            send_progress: SendProgress::new(),
             fin_wait_2_until_ms: None,
             time_wait_until_ms: None,
         }
@@ -510,6 +508,7 @@ impl<P: Clone> Connection<P> {
                 .sum::<usize>();
         let accepted = bytes.len().min(config.send_buffer.saturating_sub(buffered));
         self.send_queue.extend(&bytes[..accepted]);
+        self.send_progress.accept(accepted);
         Ok((accepted, self.flush_data(now_ms, config)))
     }
 
@@ -671,6 +670,7 @@ impl<P: Clone> Connection<P> {
             self.rtt.sample(sample);
         }
         self.reno.on_ack(acked_payload);
+        self.send_progress.acknowledge(acked_payload);
         AckOutcome {
             fin_acked,
             retransmit: None,

@@ -12,6 +12,11 @@ export {
 
 export { Stack } from "./stack.js";
 export {
+  MarkerStatus,
+  type SendMarker,
+  type WriteWithMarkerResult,
+} from "./marker.js";
+export {
   FipsTcpEndpoint,
   type FipsDatagramEndpoint,
   type FipsServiceContext,

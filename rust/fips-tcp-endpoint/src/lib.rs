@@ -10,7 +10,7 @@ use fips_core::{
     FipsEndpoint, FipsEndpointError, FipsEndpointServiceDatagram, FipsEndpointServiceReceiver,
     IdentityError, PeerIdentity,
 };
-use fips_tcp::{Config, ConnectionId, Stack, StackError, State};
+use fips_tcp::{Config, ConnectionId, MarkerStatus, SendMarker, Stack, StackError, State};
 
 /// Bounded aggregate of one received FIPS service batch.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -98,6 +98,22 @@ impl FipsTcpEndpoint {
         let accepted = self.stack.write(id, bytes, now_ms)?;
         self.flush().await?;
         Ok(accepted)
+    }
+
+    /// Accept payload and return an opaque cumulative TCP-ACK boundary.
+    pub async fn write_with_marker(
+        &mut self,
+        id: ConnectionId,
+        bytes: &[u8],
+        now_ms: u64,
+    ) -> Result<(usize, SendMarker), AdapterError> {
+        let result = self.stack.write_with_marker(id, bytes, now_ms)?;
+        self.flush().await?;
+        Ok(result)
+    }
+
+    pub fn marker_status(&self, marker: &SendMarker) -> MarkerStatus {
+        self.stack.marker_status(marker)
     }
 
     pub async fn read(

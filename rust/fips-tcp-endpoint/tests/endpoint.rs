@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use fips_core::{FipsEndpoint, FipsEndpointError, PeerIdentity};
 use fips_tcp::wire::{FIPS_VERSION, Flags, Segment, TcpOption};
-use fips_tcp::{Config, State};
+use fips_tcp::{Config, MarkerStatus, State};
 use fips_tcp_endpoint::{AdapterError, FipsTcpEndpoint};
 
 const FSP_SERVICE_PORT: u16 = 39_017;
@@ -42,11 +42,15 @@ async fn tcp_stream_runs_through_real_fips_endpoint_service_datagrams() {
     assert_eq!(tcp.ports(client).expect("client ports").1, FSP_SERVICE_PORT);
     assert_eq!(tcp.ports(server).expect("server ports").0, FSP_SERVICE_PORT);
 
-    tcp.write(client, b"actual FIPS service datagram", 10)
+    let (accepted, marker) = tcp
+        .write_with_marker(client, b"actual FIPS service datagram", 10)
         .await
         .expect("write client stream");
+    assert_eq!(accepted, 28);
+    assert_eq!(tcp.marker_status(&marker), MarkerStatus::Pending);
     tcp.receive(10).await.expect("receive stream segment");
     tcp.receive(10).await.expect("receive acknowledgment");
+    assert_eq!(tcp.marker_status(&marker), MarkerStatus::Acked);
     assert_eq!(
         tcp.read(server, 1024, 10)
             .await

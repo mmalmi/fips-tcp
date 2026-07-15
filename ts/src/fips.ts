@@ -1,5 +1,6 @@
 import { Stack } from "./stack.js";
 import { Config, ConnectionId, State } from "./types.js";
+import { MarkerStatus, SendMarker, WriteWithMarkerResult } from "./marker.js";
 
 export interface FipsServiceContext {
   src: string;
@@ -73,6 +74,23 @@ export class FipsTcpEndpoint {
       await this.flush();
       return accepted;
     });
+  }
+
+  /** Accept payload and return an opaque cumulative TCP-ACK boundary. */
+  async writeWithMarker(
+    id: ConnectionId,
+    bytes: Uint8Array,
+    nowMs = Date.now(),
+  ): Promise<WriteWithMarkerResult> {
+    return this.enqueue(async () => {
+      const result = this.stack.writeWithMarker(id, bytes, nowMs);
+      await this.flush();
+      return result;
+    });
+  }
+
+  async markerStatus(marker: SendMarker): Promise<MarkerStatus> {
+    return this.enqueue(() => this.stack.markerStatus(marker));
   }
 
   async read(id: ConnectionId, max: number, nowMs = Date.now()): Promise<Uint8Array> {

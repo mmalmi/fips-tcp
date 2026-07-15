@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
-use fips_tcp::{ConnectionId, Stack, State};
+use fips_tcp::{ConnectionId, MarkerStatus, SendMarker, Stack, State};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -33,6 +34,14 @@ enum Command {
         bytes: String,
         now: u64,
     },
+    WriteWithMarker {
+        id: u64,
+        bytes: String,
+        now: u64,
+    },
+    MarkerStatus {
+        marker: u64,
+    },
     Read {
         id: u64,
         max: usize,
@@ -51,12 +60,14 @@ fn main() {
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout().lock());
     let mut stack = Stack::new(fips_tcp::Config::default(), 0x55aa_1234_9988_7766);
+    let mut markers = HashMap::new();
+    let mut next_marker = 1_u64;
 
     for line in stdin.lock().lines() {
         let response = match line {
             Ok(line) => serde_json::from_str::<Command>(&line)
                 .map_err(|error| error.to_string())
-                .and_then(|command| execute(&mut stack, command)),
+                .and_then(|command| execute(&mut stack, &mut markers, &mut next_marker, command)),
             Err(error) => Err(error.to_string()),
         };
         let output = match response {
@@ -77,7 +88,12 @@ fn main() {
     }
 }
 
-fn execute(stack: &mut Stack<String>, command: Command) -> Result<Value, String> {
+fn execute(
+    stack: &mut Stack<String>,
+    markers: &mut HashMap<u64, SendMarker>,
+    next_marker: &mut u64,
+    command: Command,
+) -> Result<Value, String> {
     match command {
         Command::Listen { port } => stack.listen(port).map(|()| Value::Null),
         Command::Connect {
@@ -100,6 +116,26 @@ fn execute(stack: &mut Stack<String>, command: Command) -> Result<Value, String>
         Command::Write { id, bytes, now } => stack
             .write(connection_id(id), &decode_hex(&bytes)?, now)
             .map(|accepted| json!(accepted)),
+        Command::WriteWithMarker { id, bytes, now } => stack
+            .write_with_marker(connection_id(id), &decode_hex(&bytes)?, now)
+            .map(|(accepted, marker)| {
+                let handle = *next_marker;
+                *next_marker = next_marker
+                    .checked_add(1)
+                    .expect("interop marker handle space exhausted");
+                markers.insert(handle, marker);
+                json!({ "accepted": accepted, "marker": handle })
+            }),
+        Command::MarkerStatus { marker } => {
+            let Some(marker) = markers.get(&marker) else {
+                return Err("unknown marker handle".to_string());
+            };
+            return Ok(match stack.marker_status(marker) {
+                MarkerStatus::Pending => json!("pending"),
+                MarkerStatus::Acked => json!("acked"),
+                MarkerStatus::ConnectionGone => json!("connection-gone"),
+            });
+        }
         Command::Read { id, max, now } => stack
             .read(connection_id(id), max, now)
             .map(|bytes| json!(encode_hex(&bytes))),

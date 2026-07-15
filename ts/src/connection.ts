@@ -7,6 +7,7 @@ import { FIPS_VERSION, FlagSet, Flags, Segment } from "./wire.js";
 import { AckOutcome, ConnectionUpdate, openUpdate, ReassemblySegment, reassemblyEnd, TrackedSegment, trackedEnd } from "./connection-types.js";
 import { PersistTimer } from "./persist.js";
 import { resetAction } from "./reset.js";
+import { SendProgress } from "./marker.js";
 
 export class Connection {
   state: State;
@@ -30,6 +31,7 @@ export class Connection {
   private duplicateAcks = 0;
   private closeRequested = false;
   private readonly persist = new PersistTimer();
+  readonly sendProgress = new SendProgress();
   private finWait2UntilMs: number | undefined;
   private timeWaitUntilMs: number | undefined;
 
@@ -164,6 +166,7 @@ export class Connection {
       this.sendQueue.length + this.unacked.reduce((sum, segment) => sum + segment.payload.length, 0);
     const accepted = Math.min(bytes.length, Math.max(0, config.sendBuffer - buffered));
     for (const byte of bytes.subarray(0, accepted)) this.sendQueue.push(byte);
+    this.sendProgress.accept(accepted);
     return [accepted, this.flushData(nowMs)];
   }
 
@@ -268,6 +271,7 @@ export class Connection {
     this.sendUna = ack;
     if (rttSample !== undefined) this.rtt.sample(rttSample);
     this.reno.onAck(ackedPayload);
+    this.sendProgress.acknowledge(ackedPayload);
     return { finAcked };
   }
 
@@ -355,10 +359,7 @@ export class Connection {
   }
 
   resetSegment(): Segment {
-    return buildSegment(
-      this.localPort, this.remotePort, this.sendNxt, this.recvNxt, 0, this.mss,
-      new FlagSet(Flags.Rst), new Uint8Array(),
-    );
+    return buildSegment(this.localPort, this.remotePort, this.sendNxt, this.recvNxt, 0, this.mss, new FlagSet(Flags.Rst), new Uint8Array());
   }
 
   private sendTracked(flags: FlagSet, payload: Uint8Array, nowMs: number): Segment {
@@ -495,5 +496,4 @@ export class Connection {
   }
 }
 
-const deadlineAfter = (nowMs: number, durationMs: number): number =>
-  Math.min(Number.MAX_SAFE_INTEGER, nowMs + durationMs);
+const deadlineAfter = (nowMs: number, durationMs: number): number => Math.min(Number.MAX_SAFE_INTEGER, nowMs + durationMs);

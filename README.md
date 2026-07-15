@@ -113,6 +113,39 @@ diagnostics. TypeScript distribution files are tracked, so consumers can pin
 the `ts` package at an immutable public Git revision without a local build or
 sibling checkout.
 
+## Payload ACK markers
+
+`write_with_marker` in Rust and `writeWithMarker` in TypeScript preserve the
+ordinary `write` behavior while also returning an opaque marker at the payload
+boundary accepted into that connection's local send buffer. Query it with
+`marker_status` or `markerStatus`:
+
+```rust,no_run
+# use fips_tcp::{ConnectionId, MarkerStatus, Stack};
+# fn example(stack: &mut Stack<String>, stream: ConnectionId) -> Result<(), Box<dyn std::error::Error>> {
+let (accepted, marker) = stack.write_with_marker(stream, b"record", 10)?;
+assert_eq!(accepted, 6);
+match stack.marker_status(&marker) {
+    MarkerStatus::Acked => { /* the peer TCP stack cumulatively ACKed the bytes */ }
+    MarkerStatus::Pending => { /* accepted locally, but not cumulatively ACKed yet */ }
+    MarkerStatus::ConnectionGone => { /* the original connection no longer exists */ }
+}
+# Ok(())
+# }
+```
+
+Markers count payload bytes only: SYN and FIN sequence space, retransmissions,
+and duplicate ACKs do not advance them. A zero-length write returns a barrier
+at the connection's existing accepted-payload boundary, so it is immediately
+`Acked` only when all previously accepted payload is already acknowledged.
+Markers remain bound to their original connection incarnation and become
+`ConnectionGone` once that connection is removed by orderly close, abort,
+timeout, or reset. Reusing its tuple or numeric ID cannot revive them.
+
+A marker still proves only receipt by the peer's TCP/FIPS stream stack. Pubsub
+and other durable protocols must retain their application commit receipts
+above this API.
+
 ## Verification
 
 ```sh
@@ -136,4 +169,4 @@ data, and FIN loss, reversal, duplication, sequence wrap, bounded buffers and
 connections, flow control, lost window updates, zero-window probes, RTO
 backoff, fast retransmit, stale/out-of-window RST rejection, challenge ACKs,
 TIME-WAIT, structural TypeScript FIPS endpoint carriage, explicit abort/reset,
-and real TypeScript/Rust FIPS endpoint carriage.
+payload ACK markers, and real TypeScript/Rust FIPS endpoint carriage.

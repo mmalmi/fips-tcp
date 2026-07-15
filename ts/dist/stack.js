@@ -2,6 +2,7 @@ import { Connection } from "./connection.js";
 import { u32 } from "./seq.js";
 import { makeConfig } from "./types.js";
 import { FIPS_VERSION, FlagSet, Flags, Segment } from "./wire.js";
+import { markerConnectionId, MarkerStatus } from "./marker.js";
 const connectionKey = (peer, localPort, remotePort) => `${peer.length}:${peer}:${localPort}:${remotePort}`;
 export class Stack {
     config;
@@ -104,10 +105,21 @@ export class Stack {
         }
     }
     write(id, bytes, nowMs) {
+        return this.writeWithMarker(id, bytes, nowMs).accepted;
+    }
+    /** Accept payload and return its ACK boundary; an empty payload is a barrier. */
+    writeWithMarker(id, bytes, nowMs) {
         checkNow(nowMs);
-        const [accepted, segments] = this.requireConnection(id).write(bytes, nowMs, this.config);
+        const connection = this.requireConnection(id);
+        const [accepted, segments] = connection.write(bytes, nowMs, this.config);
+        const marker = connection.sendProgress.marker(id);
         this.emit(id, segments);
-        return accepted;
+        return { accepted, marker };
+    }
+    markerStatus(marker) {
+        const id = markerConnectionId(marker);
+        const connection = id === undefined ? undefined : this.connections.get(id);
+        return connection?.sendProgress.status(marker) ?? MarkerStatus.ConnectionGone;
     }
     read(id, max, nowMs) {
         checkNow(nowMs);

@@ -1,4 +1,4 @@
-use fips_tcp::{Config, ConnectionId, Stack, State};
+use fips_tcp::{Config, ConnectionId, MarkerStatus, Stack, State};
 
 struct Pair {
     a: Stack<String>,
@@ -141,6 +141,153 @@ fn per_peer_limit_counts_fin_wait_2_until_ack_without_fin_deadline() {
     pair.a
         .connect("b".to_string(), 443, pair.now)
         .expect("expired FIN-WAIT-2 must release per-peer capacity");
+}
+
+#[test]
+fn marker_waits_for_zero_window_buffered_payload_and_zero_length_is_a_barrier() {
+    let mut pair = Pair::new(Config {
+        mss: 8,
+        receive_buffer: 8,
+        ..Config::default()
+    });
+    let (client, server) = pair.connect();
+    pair.a.write(client, &[0x11; 8], pair.now).unwrap();
+    pair.settle();
+
+    let (accepted, marker) = pair
+        .a
+        .write_with_marker(client, &[0x22; 8], pair.now)
+        .unwrap();
+    assert_eq!(accepted, 8);
+    assert_eq!(pair.a.marker_status(&marker), MarkerStatus::Pending);
+    assert!(pair.a.drain_outbound().is_empty());
+    let (accepted, barrier) = pair.a.write_with_marker(client, &[], pair.now).unwrap();
+    assert_eq!(accepted, 0);
+    assert_eq!(pair.a.marker_status(&barrier), MarkerStatus::Pending);
+
+    assert_eq!(pair.b.read(server, 8, pair.now).unwrap(), [0x11; 8]);
+    pair.settle();
+    assert_eq!(pair.a.marker_status(&marker), MarkerStatus::Acked);
+    assert_eq!(pair.a.marker_status(&barrier), MarkerStatus::Acked);
+    let (_, empty_after_ack) = pair.a.write_with_marker(client, &[], pair.now).unwrap();
+    assert_eq!(pair.a.marker_status(&empty_after_ack), MarkerStatus::Acked);
+}
+
+#[test]
+fn marker_tracks_partial_wraparound_acks_without_retransmit_or_other_stream_noise() {
+    let mut pair = Pair::new(Config {
+        mss: 8,
+        initial_rto_ms: 200,
+        ..Config::default()
+    });
+    pair.b.listen(443).unwrap();
+    let initial = u32::MAX - 8;
+    let client = pair
+        .a
+        .connect_from_with_isn("b".to_string(), 50_000, 443, initial, pair.now)
+        .unwrap();
+    pair.settle();
+    pair.b.accept(443).unwrap();
+    let other = pair
+        .a
+        .connect_from_with_isn("b".to_string(), 50_001, 443, 100, pair.now)
+        .unwrap();
+    pair.settle();
+    pair.b.accept(443).unwrap();
+
+    let (accepted, marker) = pair
+        .a
+        .write_with_marker(client, &[0x33; 12], pair.now)
+        .unwrap();
+    assert_eq!(accepted, 12);
+    pair.a.drain_outbound();
+    for byte in 0..4 {
+        pair.a.write(other, &[byte; 4], pair.now).unwrap();
+        pair.settle();
+        assert_eq!(pair.a.marker_status(&marker), MarkerStatus::Pending);
+    }
+
+    pair.advance(200);
+    pair.a.poll(pair.now);
+    assert!(!pair.a.drain_outbound().is_empty());
+    assert_eq!(pair.a.marker_status(&marker), MarkerStatus::Pending);
+    let payload_start = initial.wrapping_add(1);
+    let partial = ack(443, 50_000, payload_start.wrapping_add(5));
+    pair.a.input("b".to_string(), &partial, pair.now).unwrap();
+    for _ in 0..3 {
+        pair.a.input("b".to_string(), &partial, pair.now).unwrap();
+    }
+    pair.a.drain_outbound();
+    assert_eq!(pair.a.marker_status(&marker), MarkerStatus::Pending);
+
+    pair.a
+        .input(
+            "b".to_string(),
+            &ack(443, 50_000, payload_start.wrapping_add(12)),
+            pair.now,
+        )
+        .unwrap();
+    assert_eq!(pair.a.marker_status(&marker), MarkerStatus::Acked);
+    let (_, later) = pair
+        .a
+        .write_with_marker(client, &[0x44; 4], pair.now)
+        .unwrap();
+    pair.a.drain_outbound();
+    assert_eq!(pair.a.marker_status(&marker), MarkerStatus::Acked);
+    assert_eq!(pair.a.marker_status(&later), MarkerStatus::Pending);
+    pair.a
+        .input(
+            "b".to_string(),
+            &ack(443, 50_000, payload_start.wrapping_add(16)),
+            pair.now,
+        )
+        .unwrap();
+    assert_eq!(pair.a.marker_status(&later), MarkerStatus::Acked);
+}
+
+#[test]
+fn marker_is_gone_after_abort_and_tuple_reuse_cannot_revive_it() {
+    let mut pair = Pair::new(Config::default());
+    pair.b.listen(443).unwrap();
+    let old_client = pair
+        .a
+        .connect_from_with_isn("b".to_string(), 50_000, 443, 100, pair.now)
+        .unwrap();
+    pair.settle();
+    let old_server = pair.b.accept(443).unwrap();
+    let (_, old_marker) = pair
+        .a
+        .write_with_marker(old_client, &[0x55; 4], pair.now)
+        .unwrap();
+    assert_eq!(
+        pair.b.marker_status(&old_marker),
+        MarkerStatus::ConnectionGone
+    );
+    pair.a.abort(old_client).unwrap();
+    pair.a.drain_outbound();
+    pair.b.abort(old_server).unwrap();
+    pair.b.drain_outbound();
+    assert_eq!(
+        pair.a.marker_status(&old_marker),
+        MarkerStatus::ConnectionGone
+    );
+
+    let new_client = pair
+        .a
+        .connect_from_with_isn("b".to_string(), 50_000, 443, 1_000_000, pair.now)
+        .unwrap();
+    pair.settle();
+    pair.b.accept(443).unwrap();
+    let (_, new_marker) = pair
+        .a
+        .write_with_marker(new_client, &[0x66; 16], pair.now)
+        .unwrap();
+    pair.settle();
+    assert_eq!(pair.a.marker_status(&new_marker), MarkerStatus::Acked);
+    assert_eq!(
+        pair.a.marker_status(&old_marker),
+        MarkerStatus::ConnectionGone
+    );
 }
 
 #[test]
@@ -339,6 +486,13 @@ fn reset(source_port: u16, destination_port: u16, sequence: u32) -> Vec<u8> {
     let mut reset = fips_tcp::wire::Segment::new(source_port, destination_port, sequence);
     reset.flags = fips_tcp::wire::Flags::RST;
     reset.encode().unwrap()
+}
+
+fn ack(source_port: u16, destination_port: u16, acknowledgment: u32) -> Vec<u8> {
+    let mut ack = fips_tcp::wire::Segment::new(source_port, destination_port, 0);
+    ack.flags = fips_tcp::wire::Flags::ACK;
+    ack.ack = Some(acknowledgment);
+    ack.encode().unwrap()
 }
 
 #[test]

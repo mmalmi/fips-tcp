@@ -1,4 +1,5 @@
 import { Config, ConnectionId, Outbound, State } from "./types.js";
+import { MarkerStatus, SendMarker, WriteWithMarkerResult } from "./marker.js";
 export declare class Stack {
     readonly config: Config;
     private readonly listeners;
@@ -18,6 +19,9 @@ export declare class Stack {
     input(peer: string, bytes: Uint8Array, nowMs: number): void;
     poll(nowMs: number): void;
     write(id: ConnectionId, bytes: Uint8Array, nowMs: number): number;
+    /** Accept payload and return its ACK boundary; an empty payload is a barrier. */
+    writeWithMarker(id: ConnectionId, bytes: Uint8Array, nowMs: number): WriteWithMarkerResult;
+    markerStatus(marker: SendMarker): MarkerStatus;
     read(id: ConnectionId, max: number, nowMs: number): Uint8Array;
     close(id: ConnectionId, nowMs: number): void;
     /** Abort one retained tuple, emit one active reset, and release it immediately. */

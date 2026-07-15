@@ -4,6 +4,7 @@ import {
   FipsDatagramEndpoint,
   FipsServiceContext,
   FipsTcpEndpoint,
+  MarkerStatus,
 } from "../src/index.js";
 
 type ServiceHandler = (context: FipsServiceContext) => Promise<void> | void;
@@ -63,8 +64,13 @@ test("TCP stream runs through the structural FIPS service endpoint API", async (
     expect((await bTcp.ports(server))?.[0]).toBe(fspServicePort);
 
     const request = Uint8Array.from({ length: 8192 }, (_, index) => index % 251);
-    expect(await aTcp.write(client, request)).toBe(request.length);
+    const { accepted, marker } = await aTcp.writeWithMarker(client, request);
+    expect(accepted).toBe(request.length);
+    expect(await aTcp.markerStatus(marker)).toBe(MarkerStatus.Pending);
     expect(await collect(bTcp, server, request.length)).toEqual(request);
+    await eventually(async () =>
+      (await aTcp.markerStatus(marker)) === MarkerStatus.Acked ? true : undefined,
+    );
 
     const response = new TextEncoder().encode("reply over FIPS service datagrams");
     expect(await bTcp.write(server, response)).toBe(response.length);

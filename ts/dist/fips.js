@@ -47,6 +47,17 @@ export class FipsTcpEndpoint {
             return accepted;
         });
     }
+    /** Accept payload and return an opaque cumulative TCP-ACK boundary. */
+    async writeWithMarker(id, bytes, nowMs = Date.now()) {
+        return this.enqueue(async () => {
+            const result = this.stack.writeWithMarker(id, bytes, nowMs);
+            await this.flush();
+            return result;
+        });
+    }
+    async markerStatus(marker) {
+        return this.enqueue(() => this.stack.markerStatus(marker));
+    }
     async read(id, max, nowMs = Date.now()) {
         return this.enqueue(async () => {
             const bytes = this.stack.read(id, max, nowMs);

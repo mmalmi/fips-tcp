@@ -27,6 +27,7 @@ struct Connection<P> {
     next_zero_window_probe_ms: Option<u64>,
     zero_window_probes: u8,
     read_closed: bool,
+    send_progress: SendProgress,
     fin_wait_2_until_ms: Option<u64>,
     time_wait_until_ms: Option<u64>,
 }

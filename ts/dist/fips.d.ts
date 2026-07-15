@@ -1,4 +1,5 @@
 import { Config, ConnectionId, State } from "./types.js";
+import { MarkerStatus, SendMarker, WriteWithMarkerResult } from "./marker.js";
 export interface FipsServiceContext {
     src: string;
     srcPort: number;
@@ -25,6 +26,9 @@ export declare class FipsTcpEndpoint {
     accept(): Promise<ConnectionId | undefined>;
     connect(peer: string, nowMs?: number): Promise<ConnectionId>;
     write(id: ConnectionId, bytes: Uint8Array, nowMs?: number): Promise<number>;
+    /** Accept payload and return an opaque cumulative TCP-ACK boundary. */
+    writeWithMarker(id: ConnectionId, bytes: Uint8Array, nowMs?: number): Promise<WriteWithMarkerResult>;
+    markerStatus(marker: SendMarker): Promise<MarkerStatus>;
     read(id: ConnectionId, max: number, nowMs?: number): Promise<Uint8Array>;
     close(id: ConnectionId, nowMs?: number): Promise<void>;
     /** Abort a stream after an application-level graceful shutdown deadline. */

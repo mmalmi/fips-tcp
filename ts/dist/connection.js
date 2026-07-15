@@ -7,6 +7,7 @@ import { FIPS_VERSION, FlagSet, Flags } from "./wire.js";
 import { openUpdate, reassemblyEnd, trackedEnd } from "./connection-types.js";
 import { PersistTimer } from "./persist.js";
 import { resetAction } from "./reset.js";
+import { SendProgress } from "./marker.js";
 export class Connection {
     state;
     peer;
@@ -28,6 +29,7 @@ export class Connection {
     duplicateAcks = 0;
     closeRequested = false;
     persist = new PersistTimer();
+    sendProgress = new SendProgress();
     finWait2UntilMs;
     timeWaitUntilMs;
     constructor(peer, localPort, remotePort, state, sendIsn, recvNxt, config) {
@@ -131,6 +133,7 @@ export class Connection {
         const accepted = Math.min(bytes.length, Math.max(0, config.sendBuffer - buffered));
         for (const byte of bytes.subarray(0, accepted))
             this.sendQueue.push(byte);
+        this.sendProgress.accept(accepted);
         return [accepted, this.flushData(nowMs)];
     }
     read(max) {
@@ -233,6 +236,7 @@ export class Connection {
         if (rttSample !== undefined)
             this.rtt.sample(rttSample);
         this.reno.onAck(ackedPayload);
+        this.sendProgress.acknowledge(ackedPayload);
         return { finAcked };
     }
     receiveStreamData(segment, nowMs, config, output) {

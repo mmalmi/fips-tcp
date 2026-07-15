@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createInterface, Interface } from "node:readline";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { ConnectionId, Segment, Stack, State } from "../src/index.js";
+import { ConnectionId, MarkerStatus, Segment, Stack, State } from "../src/index.js";
 
 interface WireOutbound {
   peer: string;
@@ -16,6 +16,11 @@ interface DriverResponse {
   result: unknown;
   outbound: WireOutbound[];
   error?: string;
+}
+
+interface DriverMarkerWrite {
+  accepted: number;
+  marker: number;
 }
 
 type Command = Record<string, unknown> & { op: string };
@@ -127,6 +132,38 @@ afterEach(async () => {
 });
 
 describe("live Rust/TypeScript TCP/FIPS interoperability", () => {
+  test("send markers cross the hostile Rust/TypeScript wire schedule exactly", async () => {
+    const pair = new CrossPair();
+    pairs.push(pair);
+    await pair.rustCommand({ op: "listen", port: 443 });
+    const client = pair.ts.connect("rust", 443, pair.now);
+    await pair.settle();
+    const server = Number(await pair.rustCommand({ op: "accept", port: 443 }));
+
+    const toRust = new Uint8Array(2048).fill(0x5a);
+    const toTs = new Uint8Array(2048).fill(0xa5);
+    const tsWrite = pair.ts.writeWithMarker(client, toRust, pair.now);
+    const rustWrite = await pair.rustCommand({
+      op: "writeWithMarker",
+      id: server,
+      bytes: toHex(toTs),
+      now: pair.now,
+    }) as DriverMarkerWrite;
+    expect(tsWrite.accepted).toBe(toRust.length);
+    expect(rustWrite.accepted).toBe(toTs.length);
+    expect(pair.ts.markerStatus(tsWrite.marker)).toBe(MarkerStatus.Pending);
+    expect(await pair.rustCommand({ op: "markerStatus", marker: rustWrite.marker })).toBe("pending");
+
+    await pair.step(dropFirstAndDuplicateReverse());
+    await pair.settle();
+    expect(pair.ts.markerStatus(tsWrite.marker)).toBe(MarkerStatus.Pending);
+    expect(await pair.rustCommand({ op: "markerStatus", marker: rustWrite.marker })).toBe("pending");
+    pair.advance(2000);
+    await pair.settle();
+    expect(pair.ts.markerStatus(tsWrite.marker)).toBe(MarkerStatus.Acked);
+    expect(await pair.rustCommand({ op: "markerStatus", marker: rustWrite.marker })).toBe("acked");
+  }, 30_000);
+
   test("TypeScript client and Rust server survive loss, reversal, and duplication", async () => {
     const pair = new CrossPair();
     pairs.push(pair);
