@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use fips_core::{FipsEndpoint, PeerIdentity};
+use fips_core::{FipsEndpoint, FipsEndpointError, PeerIdentity};
 use fips_tcp::{Config, State};
-use fips_tcp_endpoint::FipsTcpEndpoint;
+use fips_tcp_endpoint::{AdapterError, FipsTcpEndpoint};
 
 const FSP_SERVICE_PORT: u16 = 39_017;
 
@@ -66,4 +66,48 @@ async fn tcp_stream_runs_through_real_fips_endpoint_service_datagrams() {
     );
 
     endpoint.shutdown().await.expect("shutdown endpoint");
+}
+
+#[tokio::test]
+async fn failed_initial_flush_releases_connection_capacity_and_preserves_the_fips_error() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .expect("bind embedded endpoint"),
+    );
+    let remote_endpoint = FipsEndpoint::builder()
+        .without_system_tun()
+        .bind()
+        .await
+        .expect("bind remote endpoint identity");
+    let remote = PeerIdentity::from_npub(remote_endpoint.npub()).expect("parse remote identity");
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config {
+            max_connections: 1,
+            ..Config::default()
+        },
+        0x1234_5678,
+    )
+    .await
+    .expect("bind TCP service");
+    endpoint.shutdown().await.expect("shutdown endpoint");
+    remote_endpoint
+        .shutdown()
+        .await
+        .expect("shutdown remote endpoint");
+
+    for attempt in 0..3 {
+        let error = tcp
+            .connect(remote, attempt)
+            .await
+            .expect_err("closed FIPS endpoint must reject the initial SYN");
+        assert!(
+            matches!(error, AdapterError::Fips(FipsEndpointError::Closed)),
+            "attempt {attempt} returned {error}; failed connects must preserve the FIPS send error instead of retaining a hidden SYN until the connection limit"
+        );
+    }
 }

@@ -55,7 +55,15 @@ impl FipsTcpEndpoint {
         let id = self
             .stack
             .connect(peer.npub(), self.fsp_service_port, now_ms)?;
-        self.flush().await?;
+        if let Err(error) = self.flush().await {
+            // `connect` retained a SYN-SENT entry before emitting its initial
+            // segment. If FIPS rejects that segment, the caller never receives
+            // the ID and therefore cannot release the hidden connection. A
+            // SYN-SENT close removes it immediately; preserve the send error
+            // even if rollback unexpectedly fails.
+            let _ = self.stack.close(id, now_ms);
+            return Err(error);
+        }
         Ok(id)
     }
 
