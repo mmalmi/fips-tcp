@@ -28,8 +28,9 @@ embeddings and standard-stack interoperability tests.
 - `SMOLTCP_REFERENCE.md`: the pinned smoltcp reference revision and the
   behavior mapped from it.
 
-The briefly published `fips-tcp-fips` 0.1.0 package is superseded by the
-clearer `fips-tcp-endpoint` name. New Rust consumers should use the latter.
+The briefly published `fips-tcp-fips` 0.1.0 package is yanked and superseded
+by the clearer `fips-tcp-endpoint` name. New Rust consumers should use the
+latter.
 
 The Rust and TypeScript implementations use the same wire encoding and expose
 the same deterministic clock-driven operations. Neither implementation calls
