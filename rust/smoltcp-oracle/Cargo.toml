@@ -1,0 +1,17 @@
+[package]
+name = "fips-tcp-smoltcp-oracle"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dev-dependencies]
+fips-tcp = { path = "../fips-tcp" }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp.git", rev = "4d32d47d6905dc41e8baa2f9c29ab7f0bc81639d", default-features = false, features = [
+    "std",
+    "medium-ip",
+    "proto-ipv4",
+    "socket-tcp",
+    "socket-tcp-reno",
+] }

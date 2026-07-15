@@ -23,6 +23,8 @@ embeddings and standard-stack interoperability tests.
 - `rust/fips-tcp`: dependency-free Rust sans-I/O state machine.
 - `rust/fips-tcp-endpoint`: async adapter for `fips_core::FipsEndpoint`.
 - `rust/interop-driver`: JSON-lines test driver used by TypeScript interop tests.
+- `rust/smoltcp-oracle`: unpublished test-only synthetic-IP bridge to the
+  pinned smoltcp state machine.
 - `ts`: `@fips/tcp`, including the TypeScript sans-I/O state machine and a
   structural `FipsNode` adapter.
 - `SMOLTCP_REFERENCE.md`: the pinned smoltcp reference revision and the
@@ -169,4 +171,6 @@ data, and FIN loss, reversal, duplication, sequence wrap, bounded buffers and
 connections, flow control, lost window updates, zero-window probes, RTO
 backoff, fast retransmit, stale/out-of-window RST rejection, challenge ACKs,
 TIME-WAIT, structural TypeScript FIPS endpoint carriage, explicit abort/reset,
-payload ACK markers, and real TypeScript/Rust FIPS endpoint carriage.
+payload ACK markers, real TypeScript/Rust FIPS endpoint carriage, and
+bidirectional smoltcp interoperability through SYN, data, ACK loss,
+retransmission, and FIN.
