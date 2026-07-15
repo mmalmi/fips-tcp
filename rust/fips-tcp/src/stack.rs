@@ -9,12 +9,7 @@ use crate::seq::{after, before, before_or_equal, distance, in_closed_interval};
 use crate::types::{Config, ConnectionId, Outbound, StackError, State};
 use crate::wire::{FIPS_VERSION, Flags, Segment};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct ConnectionKey<P> {
-    peer: P,
-    local_port: u16,
-    remote_port: u16,
-}
+include!("stack_types.rs");
 
 pub struct Stack<P> {
     config: Config,
@@ -95,7 +90,7 @@ where
         if local_port == 0 || remote_port == 0 {
             return Err(StackError::ZeroPort);
         }
-        self.ensure_connection_capacity()?;
+        self.ensure_connection_capacity(&peer)?;
         let key = ConnectionKey {
             peer: peer.clone(),
             local_port,
@@ -130,7 +125,7 @@ where
                 self.emit_reset(peer, &segment)?;
                 return Ok(());
             }
-            self.ensure_connection_capacity()?;
+            self.ensure_connection_capacity(&peer)?;
             let id = self.allocate_connection_id();
             let isn = self.next_isn();
             let (connection, segments) =
@@ -287,8 +282,15 @@ where
         }
     }
 
-    fn ensure_connection_capacity(&self) -> Result<(), StackError> {
-        if self.connections.len() >= self.config.max_connections {
+    fn ensure_connection_capacity(&self, peer: &P) -> Result<(), StackError> {
+        let peer_connections = self
+            .connections
+            .values()
+            .filter(|connection| &connection.peer == peer)
+            .count();
+        if self.connections.len() >= self.config.max_connections
+            || peer_connections >= self.config.max_connections_per_peer
+        {
             Err(StackError::ConnectionLimit)
         } else {
             Ok(())

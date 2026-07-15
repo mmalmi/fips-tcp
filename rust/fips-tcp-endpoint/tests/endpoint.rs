@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fips_core::{FipsEndpoint, FipsEndpointError, PeerIdentity};
+use fips_tcp::wire::{FIPS_VERSION, Flags, Segment, TcpOption};
 use fips_tcp::{Config, State};
 use fips_tcp_endpoint::{AdapterError, FipsTcpEndpoint};
 
@@ -110,4 +111,102 @@ async fn failed_initial_flush_releases_connection_capacity_and_preserves_the_fip
             "attempt {attempt} returned {error}; failed connects must preserve the FIPS send error instead of retaining a hidden SYN until the connection limit"
         );
     }
+}
+
+#[tokio::test]
+async fn malformed_datagram_does_not_drop_later_valid_datagram_from_the_batch() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .expect("bind embedded endpoint"),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).expect("parse local identity");
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config::default(),
+        0x1234_5678,
+    )
+    .await
+    .expect("bind TCP service");
+    send_loopback(&endpoint, local, vec![1, 2, 3]).await;
+    send_loopback(&endpoint, local, rst(50_000)).await;
+
+    let report = tcp.receive_report(0).await.expect("receive mixed batch");
+    assert_eq!(report.datagrams, 2);
+    assert_eq!(report.processed, 1);
+    assert_eq!(report.malformed, 1);
+    assert_eq!(report.connection_limited, 0);
+    assert_eq!(report.other_errors, 0);
+    assert_eq!(report.rejected(), 1);
+
+    endpoint.shutdown().await.expect("shutdown endpoint");
+}
+
+#[tokio::test]
+async fn full_table_error_does_not_drop_later_valid_datagram_from_the_batch() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .expect("bind embedded endpoint"),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).expect("parse local identity");
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config {
+            max_connections: 1,
+            max_connections_per_peer: 1,
+            ..Config::default()
+        },
+        0x1234_5678,
+    )
+    .await
+    .expect("bind TCP service");
+    send_loopback(&endpoint, local, syn(50_000)).await;
+    send_loopback(&endpoint, local, syn(50_001)).await;
+    send_loopback(&endpoint, local, rst(50_002)).await;
+
+    let report = tcp
+        .receive_report(0)
+        .await
+        .expect("receive full-table batch");
+    assert_eq!(report.datagrams, 3);
+    assert_eq!(report.processed, 2);
+    assert_eq!(report.malformed, 0);
+    assert_eq!(report.connection_limited, 1);
+    assert_eq!(report.other_errors, 0);
+    assert_eq!(report.rejected(), 1);
+
+    endpoint.shutdown().await.expect("shutdown endpoint");
+}
+
+async fn send_loopback(endpoint: &FipsEndpoint, local: PeerIdentity, bytes: Vec<u8>) {
+    endpoint
+        .send_datagram(local, FSP_SERVICE_PORT, FSP_SERVICE_PORT, bytes)
+        .await
+        .expect("send loopback service datagram");
+}
+
+fn syn(source_port: u16) -> Vec<u8> {
+    let mut segment = Segment::new(source_port, FSP_SERVICE_PORT, u32::from(source_port));
+    segment.flags = Flags::SYN;
+    segment.options = vec![
+        TcpOption::MaxSegmentSize(1024),
+        TcpOption::FipsVersion {
+            version: FIPS_VERSION,
+            reserved: 0,
+        },
+    ];
+    segment.encode().expect("encode SYN")
+}
+
+fn rst(source_port: u16) -> Vec<u8> {
+    let mut segment = Segment::new(source_port, FSP_SERVICE_PORT, u32::from(source_port));
+    segment.flags = Flags::RST;
+    segment.encode().expect("encode RST")
 }

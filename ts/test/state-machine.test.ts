@@ -83,6 +83,22 @@ describe("TCP/FIPS TypeScript state machine", () => {
     expect(pair.b.state(server)).toBeUndefined();
   });
 
+  test("per-peer limit counts active and TIME-WAIT state until expiry", () => {
+    const pair = new Pair({ maxConnectionsPerPeer: 1, timeWaitMs: 50 });
+    const [client, server] = pair.connect();
+    expect(() => pair.a.connect("b", 443, pair.now)).toThrow(/connection limit/i);
+    pair.a.close(client, pair.now);
+    pair.settle();
+    pair.b.close(server, pair.now);
+    pair.settle();
+    expect(pair.a.state(client)).toBe(State.TimeWait);
+    expect(() => pair.a.connect("b", 443, pair.now)).toThrow(/connection limit/i);
+
+    pair.advance(50);
+    pair.settle();
+    expect(() => pair.a.connect("b", 443, pair.now)).not.toThrow();
+  });
+
   test("lost SYN and first payload recover via RTO", () => {
     const pair = new Pair();
     pair.b.listen(443);

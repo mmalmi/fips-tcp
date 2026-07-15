@@ -74,6 +74,23 @@ test("TCP stream runs through the structural FIPS service endpoint API", async (
   }
 }, 15_000);
 
+test("failed initial sends release capacity and preserve the endpoint error", async () => {
+  const node = new MemoryFipsEndpoint("peer-a");
+  const tcp = new FipsTcpEndpoint(
+    node,
+    fspServicePort,
+    { maxConnections: 1, maxConnectionsPerPeer: 1 },
+    0x3333n,
+  );
+  try {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(tcp.connect("offline-peer", attempt)).rejects.toThrow("unknown peer");
+    }
+  } finally {
+    await tcp.dispose();
+  }
+});
+
 async function collect(
   endpoint: FipsTcpEndpoint,
   id: number,

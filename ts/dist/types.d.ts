@@ -3,6 +3,8 @@ export interface Config {
     receiveBuffer: number;
     sendBuffer: number;
     maxConnections: number;
+    /** Retained connections allowed for one authenticated carrier peer. */
+    maxConnectionsPerPeer: number;
     maxReassemblySegments: number;
     initialRtoMs: number;
     minRtoMs: number;

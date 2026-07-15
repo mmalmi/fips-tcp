@@ -49,7 +49,7 @@ export class Stack {
         checkNow(nowMs);
         if (!Number.isInteger(isn) || isn < 0 || isn > 0xffff_ffff)
             throw new Error("ISN must be a u32");
-        this.ensureConnectionCapacity();
+        this.ensureConnectionCapacity(peer);
         const key = connectionKey(peer, localPort, remotePort);
         if (this.lookup.has(key))
             throw new Error("connection already exists");
@@ -74,7 +74,7 @@ export class Stack {
                     this.emitReset(peer, segment);
                     return;
                 }
-                this.ensureConnectionCapacity();
+                this.ensureConnectionCapacity(peer);
                 id = this.allocateConnectionId();
                 const [connection, segments] = Connection.server(peer, segment, this.nextIsn(), nowMs, this.config);
                 this.lookup.set(key, id);
@@ -175,9 +175,16 @@ export class Stack {
             throw new Error("unknown connection");
         return connection;
     }
-    ensureConnectionCapacity() {
-        if (this.connections.size >= this.config.maxConnections)
+    ensureConnectionCapacity(peer) {
+        let peerConnections = 0;
+        for (const connection of this.connections.values()) {
+            if (connection.peer === peer)
+                peerConnections += 1;
+        }
+        if (this.connections.size >= this.config.maxConnections ||
+            peerConnections >= this.config.maxConnectionsPerPeer) {
             throw new Error("connection limit reached");
+        }
     }
     allocateConnectionId() {
         const id = this.nextConnectionId;

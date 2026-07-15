@@ -12,6 +12,28 @@ use fips_core::{
 };
 use fips_tcp::{Config, ConnectionId, Stack, StackError, State};
 
+/// Bounded aggregate of one received FIPS service batch.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ReceiveReport {
+    /// Total datagrams drained from the bounded FIPS receiver batch.
+    pub datagrams: usize,
+    /// Datagrams accepted or intentionally ignored by the TCP state machine.
+    pub processed: usize,
+    /// Datagrams rejected by bounded TCP wire decoding.
+    pub malformed: usize,
+    /// Valid new tuples rejected by global or authenticated-peer admission.
+    pub connection_limited: usize,
+    /// Other isolated TCP state-machine errors.
+    pub other_errors: usize,
+}
+
+impl ReceiveReport {
+    /// Total isolated errors in this batch.
+    pub fn rejected(self) -> usize {
+        self.malformed + self.connection_limited + self.other_errors
+    }
+}
+
 pub struct FipsTcpEndpoint {
     endpoint: Arc<FipsEndpoint>,
     receiver: FipsEndpointServiceReceiver,
@@ -99,23 +121,41 @@ impl FipsTcpEndpoint {
         self.flush().await
     }
 
-    /// Await one FIPS service batch, feed every segment into TCP, and flush replies.
+    /// Await one FIPS service batch and return its datagram count.
+    ///
+    /// Individual invalid or over-capacity segments are isolated within the
+    /// batch. Use [`Self::receive_report`] to observe their bounded aggregate.
     pub async fn receive(&mut self, now_ms: u64) -> Result<usize, AdapterError> {
+        Ok(self.receive_report(now_ms).await?.datagrams)
+    }
+
+    /// Feed one complete bounded FIPS batch into TCP and report isolated errors.
+    pub async fn receive_report(&mut self, now_ms: u64) -> Result<ReceiveReport, AdapterError> {
         let count = self
             .receiver
             .recv_batch_into(&mut self.receive_batch, 64)
             .await
             .ok_or(AdapterError::Closed)?;
+        let mut report = ReceiveReport {
+            datagrams: count,
+            ..ReceiveReport::default()
+        };
         for datagram in self.receive_batch.drain(..) {
             debug_assert_eq!(datagram.destination_port, self.fsp_service_port);
-            self.stack.input(
+            match self.stack.input(
                 datagram.source_peer.npub(),
                 datagram.data.as_slice(),
                 now_ms,
-            )?;
+            ) {
+                Ok(()) => report.processed += 1,
+                Err(StackError::Wire(_)) => report.malformed += 1,
+                Err(StackError::ConnectionLimit) => report.connection_limited += 1,
+                Err(_) => report.other_errors += 1,
+            }
         }
+        debug_assert_eq!(report.datagrams, report.processed + report.rejected());
         self.flush().await?;
-        Ok(count)
+        Ok(report)
     }
 
     pub fn state(&self, id: ConnectionId) -> Option<State> {

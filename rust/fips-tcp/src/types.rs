@@ -8,6 +8,8 @@ pub struct Config {
     pub receive_buffer: usize,
     pub send_buffer: usize,
     pub max_connections: usize,
+    /// Retained connections allowed for one authenticated carrier peer.
+    pub max_connections_per_peer: usize,
     pub max_reassembly_segments: usize,
     pub initial_rto_ms: u64,
     pub min_rto_ms: u64,
@@ -23,6 +25,7 @@ impl Default for Config {
             receive_buffer: u16::MAX as usize,
             send_buffer: 1024 * 1024,
             max_connections: 1024,
+            max_connections_per_peer: usize::MAX,
             max_reassembly_segments: 128,
             initial_rto_ms: 1000,
             min_rto_ms: 200,
@@ -46,7 +49,10 @@ impl Config {
         if self.send_buffer == 0 {
             return Err(StackError::InvalidConfig("send buffer must be non-zero"));
         }
-        if self.max_connections == 0 || self.max_reassembly_segments == 0 {
+        if self.max_connections == 0
+            || self.max_connections_per_peer == 0
+            || self.max_reassembly_segments == 0
+        {
             return Err(StackError::InvalidConfig(
                 "connection limits must be non-zero",
             ));

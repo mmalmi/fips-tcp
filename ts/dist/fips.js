@@ -23,7 +23,20 @@ export class FipsTcpEndpoint {
     async connect(peer, nowMs = Date.now()) {
         return this.enqueue(async () => {
             const id = this.stack.connect(peer, this.fspServicePort, nowMs);
-            await this.flush();
+            try {
+                await this.flush();
+            }
+            catch (error) {
+                // SYN-SENT closes synchronously. The caller never received this ID, so
+                // release it before preserving the original endpoint send failure.
+                try {
+                    this.stack.close(id, nowMs);
+                }
+                catch {
+                    // The send failure remains the actionable boundary error.
+                }
+                throw error;
+            }
             return id;
         });
     }

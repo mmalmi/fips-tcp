@@ -67,3 +67,9 @@ and FIN retransmission, and a bounded retry/user timeout.
 TCP/FIPS provides a reliable stream while both endpoints retain connection
 state. Durable application delivery, offline store-and-forward, and idempotent
 effects are intentionally outside this protocol.
+
+Implementations must bound retained connections globally and may apply a
+stricter authenticated-peer cap. That cap counts pending, active, closing, and
+TIME-WAIT state. Rejecting a new tuple at either cap must not allocate
+connection state or disturb valid later segments from the same bounded carrier
+batch.

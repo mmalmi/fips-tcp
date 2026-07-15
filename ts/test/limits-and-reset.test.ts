@@ -53,3 +53,28 @@ test("send-buffer acceptance is bounded", () => {
   }
   expect(client.write(id, new Uint8Array(100).fill(7), 0)).toBe(10);
 });
+
+test("one peer SYN flood cannot consume another peer's capacity", () => {
+  const server = new Stack({ maxConnections: 2, maxConnectionsPerPeer: 1 }, 3);
+  server.listen(443);
+  server.input("flooder", syn(50_000), 0);
+  expect(server.drainOutbound()).toHaveLength(1);
+  for (let sourcePort = 50_001; sourcePort < 50_020; sourcePort += 1) {
+    expect(() => server.input("flooder", syn(sourcePort), 0)).toThrow(/connection limit/i);
+    expect(server.drainOutbound()).toHaveLength(0);
+  }
+  expect(() => server.input("healthy", syn(51_000), 0)).not.toThrow();
+  expect(server.drainOutbound()).toHaveLength(1);
+});
+
+const syn = (sourcePort: number): Uint8Array =>
+  new Segment({
+    srcPort: sourcePort,
+    dstPort: 443,
+    seq: sourcePort,
+    flags: new FlagSet(Flags.Syn),
+    options: [
+      { kind: TcpOptionKind.MaxSegmentSize, value: 1024 },
+      { kind: TcpOptionKind.FipsVersion, version: FIPS_VERSION, reserved: 0 },
+    ],
+  }).encode();

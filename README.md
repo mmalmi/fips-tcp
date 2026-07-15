@@ -77,6 +77,18 @@ tcp.write(stream, b"record", 1).await?;
 # }
 ```
 
+Services that permit only one stream per authenticated peer set Rust
+`Config::max_connections_per_peer` or TypeScript `maxConnectionsPerPeer` to
+`1`. Pending handshakes, established streams, closing streams, and TIME-WAIT
+all count toward the cap, so distinct source ports cannot bypass admission.
+The generic default remains effectively unlimited and preserves applications
+that intentionally multiplex several streams per peer.
+
+Rust `FipsTcpEndpoint::receive_report` isolates malformed and over-capacity
+segments within each bounded FIPS receive batch. Its aggregate reports counts
+only; it neither retains attacker-controlled error strings nor logs each bad
+datagram. The compatibility `receive` method returns the total batch count.
+
 The TypeScript adapter accepts the public `FipsNode` service shape without a
 runtime package dependency:
 

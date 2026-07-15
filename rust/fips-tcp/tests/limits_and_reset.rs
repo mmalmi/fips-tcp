@@ -76,3 +76,46 @@ fn send_buffer_acceptance_is_bounded() {
     }
     assert_eq!(client.write(id, &[7; 100], 0).unwrap(), 10);
 }
+
+#[test]
+fn one_peer_syn_flood_cannot_consume_another_peers_capacity() {
+    let mut server = Stack::new(
+        Config {
+            max_connections: 2,
+            max_connections_per_peer: 1,
+            ..Config::default()
+        },
+        3,
+    );
+    server.listen(443).unwrap();
+
+    server
+        .input("flooder".to_string(), &syn(50_000), 0)
+        .unwrap();
+    assert_eq!(server.drain_outbound().len(), 1);
+    for source_port in 50_001..50_020 {
+        assert!(matches!(
+            server.input("flooder".to_string(), &syn(source_port), 0),
+            Err(StackError::ConnectionLimit)
+        ));
+        assert!(server.drain_outbound().is_empty());
+    }
+
+    server
+        .input("healthy".to_string(), &syn(51_000), 0)
+        .expect("a second peer must retain its global table slot");
+    assert_eq!(server.drain_outbound().len(), 1);
+}
+
+fn syn(source_port: u16) -> Vec<u8> {
+    let mut syn = Segment::new(source_port, 443, u32::from(source_port));
+    syn.flags = Flags::SYN;
+    syn.options = vec![
+        TcpOption::MaxSegmentSize(1024),
+        TcpOption::FipsVersion {
+            version: FIPS_VERSION,
+            reserved: 0,
+        },
+    ];
+    syn.encode().unwrap()
+}

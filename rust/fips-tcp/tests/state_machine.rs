@@ -95,6 +95,29 @@ fn handshake_bidirectional_stream_and_orderly_close() {
 }
 
 #[test]
+fn per_peer_limit_counts_active_and_time_wait_until_expiry() {
+    let mut pair = Pair::new(Config {
+        max_connections_per_peer: 1,
+        time_wait_ms: 50,
+        ..Config::default()
+    });
+    let (client, server) = pair.connect();
+    assert!(pair.a.connect("b".to_string(), 443, pair.now).is_err());
+    pair.a.close(client, pair.now).unwrap();
+    pair.settle();
+    pair.b.close(server, pair.now).unwrap();
+    pair.settle();
+    assert_eq!(pair.a.state(client), Some(State::TimeWait));
+    assert!(pair.a.connect("b".to_string(), 443, pair.now).is_err());
+
+    pair.advance(50);
+    pair.settle();
+    pair.a
+        .connect("b".to_string(), 443, pair.now)
+        .expect("expired TIME-WAIT must release per-peer capacity");
+}
+
+#[test]
 fn lost_syn_and_first_payload_recover_via_rto() {
     let mut pair = Pair::new(Config::default());
     pair.b.listen(443).unwrap();

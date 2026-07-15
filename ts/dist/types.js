@@ -3,6 +3,7 @@ export const DEFAULT_CONFIG = Object.freeze({
     receiveBuffer: 0xffff,
     sendBuffer: 1024 * 1024,
     maxConnections: 1024,
+    maxConnectionsPerPeer: Number.MAX_SAFE_INTEGER,
     maxReassemblySegments: 128,
     initialRtoMs: 1000,
     minRtoMs: 200,
@@ -36,6 +37,7 @@ export function makeConfig(overrides = {}) {
         throw new Error("receive buffer must be at most 65535 bytes");
     positiveInteger(config.sendBuffer, "send buffer");
     positiveInteger(config.maxConnections, "connection limit");
+    positiveInteger(config.maxConnectionsPerPeer, "per-peer connection limit");
     positiveInteger(config.maxReassemblySegments, "reassembly segment limit");
     positiveInteger(config.initialRtoMs, "initial RTO");
     positiveInteger(config.minRtoMs, "minimum RTO");
