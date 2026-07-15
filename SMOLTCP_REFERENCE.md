@@ -34,18 +34,21 @@ Carrier independence alone does not make TCP/FIPS wire-compatible with a
 standard TCP stack. smoltcp expects TCP inside IP and calculates an IP
 pseudo-header checksum, while TCP/FIPS deliberately has no IP, requires a zero
 checksum under FSP authentication, and requires its version option during the
-handshake. A non-public smoltcp oracle can bridge these boundaries in tests:
+handshake. A non-public smoltcp oracle bridges these boundaries in
+`rust/smoltcp-oracle`:
 
 1. wrap emitted segments in a synthetic IP envelope and fill the checksum;
 2. verify and clear the checksum before passing replies to TCP/FIPS; and
-3. run the TCP/FIPS state machine in an explicit standard-handshake test
-   profile because smoltcp ignores but does not echo the TCP/FIPS option.
+3. inject the TCP/FIPS option before end-of-options padding on
+   smoltcp-generated SYN and SYN-ACK segments, because smoltcp accepts the
+   unknown option but does not echo it.
 
-That bridge is moderate test-harness work and does not require IP in either
-public library. iperf3 is a later system test, not a direct oracle: it also
-requires an OS-visible socket/TUN bridge and implementation of iperf3's
-application-level control flow. smoltcp state-machine interoperability should
-come first.
+The production TCP/FIPS state machine still requires the version option on
+every handshake; there is no permissive or standard-handshake mode. Synthetic
+IP types and smoltcp are confined to an unpublished test-only crate, so neither
+public library gains IP APIs or runtime dependencies. iperf3 remains a later
+system test rather than a direct oracle: it also requires an OS-visible socket
+bridge and implementation of iperf3's application-level control flow.
 
 Features intentionally deferred from TCP/FIPS v1 include SACK, window scaling,
 timestamps, ECN, urgent data, and delayed ACK. Adding one requires a protocol
