@@ -4,9 +4,9 @@ import { buildSegment } from "./segment.js";
 import { after, before, beforeOrEqual, distance, inClosedInterval, u32 } from "./seq.js";
 import { Config, State } from "./types.js";
 import { FIPS_VERSION, FlagSet, Flags, Segment } from "./wire.js";
-import { AckOutcome, ConnectionUpdate, openUpdate, ReassemblySegment } from "./connection-types.js";
-import { reassemblyEnd, TrackedSegment, trackedEnd } from "./connection-types.js";
+import { AckOutcome, ConnectionUpdate, openUpdate, ReassemblySegment, reassemblyEnd, TrackedSegment, trackedEnd } from "./connection-types.js";
 import { PersistTimer } from "./persist.js";
+import { resetAction } from "./reset.js";
 
 export class Connection {
   state: State;
@@ -74,9 +74,7 @@ export class Connection {
     nowMs: number,
     config: Config,
   ): [Connection, Segment[]] {
-    const connection = new Connection(
-      peer, syn.dstPort, syn.srcPort, State.SynReceived, isn, u32(syn.seq + 1), config,
-    );
+    const connection = new Connection(peer, syn.dstPort, syn.srcPort, State.SynReceived, isn, u32(syn.seq + 1), config);
     connection.updateRemoteWindow(syn.window, nowMs);
     connection.negotiateMss(syn, config);
     return [
@@ -86,7 +84,13 @@ export class Connection {
   }
 
   onSegment(segment: Segment, nowMs: number, config: Config): ConnectionUpdate {
-    if (segment.flags.has(Flags.Rst)) return { segments: [], accepted: false, closed: true };
+    if (segment.flags.has(Flags.Rst)) {
+      const action = resetAction(
+        this.state, segment.seq, segment.ack, this.sendUna, this.sendNxt, this.recvNxt, this.availableWindow(),
+      );
+      if (action === "close") return { segments: [], accepted: false, closed: true };
+      return openUpdate(action === "challenge" ? [this.ackSegment()] : []);
+    }
 
     if (this.state === State.SynSent) {
       if (

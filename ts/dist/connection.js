@@ -4,9 +4,9 @@ import { buildSegment } from "./segment.js";
 import { after, before, beforeOrEqual, distance, inClosedInterval, u32 } from "./seq.js";
 import { State } from "./types.js";
 import { FIPS_VERSION, FlagSet, Flags } from "./wire.js";
-import { openUpdate } from "./connection-types.js";
-import { reassemblyEnd, trackedEnd } from "./connection-types.js";
+import { openUpdate, reassemblyEnd, trackedEnd } from "./connection-types.js";
 import { PersistTimer } from "./persist.js";
+import { resetAction } from "./reset.js";
 export class Connection {
     state;
     peer;
@@ -57,8 +57,12 @@ export class Connection {
         ];
     }
     onSegment(segment, nowMs, config) {
-        if (segment.flags.has(Flags.Rst))
-            return { segments: [], accepted: false, closed: true };
+        if (segment.flags.has(Flags.Rst)) {
+            const action = resetAction(this.state, segment.seq, segment.ack, this.sendUna, this.sendNxt, this.recvNxt, this.availableWindow());
+            if (action === "close")
+                return { segments: [], accepted: false, closed: true };
+            return openUpdate(action === "challenge" ? [this.ackSegment()] : []);
+        }
         if (this.state === State.SynSent) {
             if (segment.flags.has(Flags.Syn) &&
                 segment.flags.has(Flags.Ack) &&

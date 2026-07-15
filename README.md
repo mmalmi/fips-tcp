@@ -134,5 +134,6 @@ The test matrix covers byte-exact shared vectors, malformed input, both
 same-language stacks, Rust↔TypeScript in both client/server directions, SYN,
 data, and FIN loss, reversal, duplication, sequence wrap, bounded buffers and
 connections, flow control, lost window updates, zero-window probes, RTO
-backoff, fast retransmit, RST, TIME-WAIT, structural TypeScript FIPS endpoint
-carriage, explicit abort/reset, and real TypeScript/Rust FIPS endpoint carriage.
+backoff, fast retransmit, stale/out-of-window RST rejection, challenge ACKs,
+TIME-WAIT, structural TypeScript FIPS endpoint carriage, explicit abort/reset,
+and real TypeScript/Rust FIPS endpoint carriage.

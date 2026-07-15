@@ -205,6 +205,84 @@ fn abort_after_zero_window_close_deadline_resets_peer_and_releases_capacity() {
 }
 
 #[test]
+fn reset_validation_survives_stale_tuple_reuse_and_challenges_in_window_guess() {
+    let mut pair = Pair::new(Config::default());
+    pair.b.listen(443).unwrap();
+    let old_client = pair
+        .a
+        .connect_from_with_isn("b".to_string(), 50_000, 443, 100, pair.now)
+        .unwrap();
+    pair.settle();
+    let old_server = pair.b.accept(443).unwrap();
+
+    pair.a.abort(old_client).unwrap();
+    let stale_reset = pair.a.drain_outbound().remove(0).bytes;
+    pair.b.abort(old_server).unwrap();
+    pair.b.drain_outbound();
+
+    let new_client = pair
+        .a
+        .connect_from_with_isn("b".to_string(), 50_000, 443, 1_000_000, pair.now)
+        .unwrap();
+    pair.settle();
+    let new_server = pair.b.accept(443).unwrap();
+    pair.b
+        .input("a".to_string(), &stale_reset, pair.now)
+        .unwrap();
+    assert_eq!(pair.b.state(new_server), Some(State::Established));
+    assert!(pair.b.drain_outbound().is_empty());
+
+    let in_window = reset(50_000, 443, 1_000_002);
+    pair.b.input("a".to_string(), &in_window, pair.now).unwrap();
+    assert_eq!(pair.b.state(new_server), Some(State::Established));
+    let challenge = pair.b.drain_outbound();
+    assert_eq!(challenge.len(), 1);
+    let challenge = fips_tcp::wire::Segment::decode(&challenge[0].bytes).unwrap();
+    assert_eq!(challenge.flags, fips_tcp::wire::Flags::ACK);
+    assert_eq!(challenge.ack, Some(1_000_001));
+
+    let outside = reset(50_000, 443, 1_000_001 + u32::from(u16::MAX));
+    pair.b.input("a".to_string(), &outside, pair.now).unwrap();
+    assert_eq!(pair.b.state(new_server), Some(State::Established));
+    assert!(pair.b.drain_outbound().is_empty());
+
+    pair.a.abort(new_client).unwrap();
+    let exact = pair.a.drain_outbound();
+    assert_eq!(exact.len(), 1);
+    pair.b
+        .input("a".to_string(), &exact[0].bytes, pair.now)
+        .unwrap();
+    assert_eq!(pair.b.state(new_server), None);
+}
+
+#[test]
+fn syn_sent_ignores_unacknowledged_reset_but_accepts_closed_port_reset() {
+    let mut pair = Pair::new(Config::default());
+    let client = pair
+        .a
+        .connect_from_with_isn("b".to_string(), 50_000, 443, 100, pair.now)
+        .unwrap();
+    let syn = pair.a.drain_outbound().remove(0).bytes;
+    pair.a
+        .input("b".to_string(), &reset(443, 50_000, 0), pair.now)
+        .unwrap();
+    assert_eq!(pair.a.state(client), Some(State::SynSent));
+    assert!(pair.a.drain_outbound().is_empty());
+
+    pair.b.input("a".to_string(), &syn, pair.now).unwrap();
+    let rejection = pair.b.drain_outbound();
+    assert_eq!(rejection.len(), 1);
+    let rejection_segment = fips_tcp::wire::Segment::decode(&rejection[0].bytes).unwrap();
+    assert!(rejection_segment.flags.contains(fips_tcp::wire::Flags::RST));
+    assert!(rejection_segment.flags.contains(fips_tcp::wire::Flags::ACK));
+    assert_eq!(rejection_segment.ack, Some(101));
+    pair.a
+        .input("b".to_string(), &rejection[0].bytes, pair.now)
+        .unwrap();
+    assert_eq!(pair.a.state(client), None);
+}
+
+#[test]
 fn lost_syn_and_first_payload_recover_via_rto() {
     let mut pair = Pair::new(Config::default());
     pair.b.listen(443).unwrap();
@@ -255,6 +333,12 @@ fn lost_syn_and_first_payload_recover_via_rto() {
         }
     }
     assert_eq!(received, payload);
+}
+
+fn reset(source_port: u16, destination_port: u16, sequence: u32) -> Vec<u8> {
+    let mut reset = fips_tcp::wire::Segment::new(source_port, destination_port, sequence);
+    reset.flags = fips_tcp::wire::Flags::RST;
+    reset.encode().unwrap()
 }
 
 #[test]

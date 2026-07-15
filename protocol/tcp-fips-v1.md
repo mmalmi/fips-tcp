@@ -80,3 +80,11 @@ deadline. Following RFC 9293, the implementation sends one reset using
 `<SEQ=SND.NXT><CTL=RST>`, flushes all other queued transmissions, and removes
 local connection state immediately. Aborting an unknown tuple emits nothing
 and cannot disturb another tuple.
+
+Incoming resets follow RFC 9293 and RFC 5961 state and sequence validation.
+SYN-SENT accepts a reset only when its ACK acknowledges the outstanding SYN.
+For SYN-RECEIVED and synchronized states, an RST at `RCV.NXT` closes the tuple,
+an in-window non-exact RST elicits one challenge ACK without closing, and an
+out-of-window RST is silently dropped. With a zero receive window, only the
+exact `RCV.NXT` reset is accepted. These checks apply after the authenticated
+carrier identity and TCP port tuple have selected the retained connection.

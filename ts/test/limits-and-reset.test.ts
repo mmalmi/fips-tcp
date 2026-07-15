@@ -74,6 +74,19 @@ test("FIN-WAIT-2 retention must be a bounded positive duration", () => {
   );
 });
 
+test("SYN-RECEIVED requires an acceptable RST sequence", () => {
+  const server = new Stack({ maxConnections: 1 }, 5);
+  server.listen(443);
+  server.input("peer", syn(50_000), 0);
+  server.drainOutbound();
+
+  server.input("peer", reset(50_000, 443, 1_000_000), 0);
+  expect(() => server.input("other", syn(50_001), 0)).toThrow(/connection limit/i);
+
+  server.input("peer", reset(50_000, 443, 50_001), 0);
+  expect(() => server.input("other", syn(50_001), 0)).not.toThrow();
+});
+
 const syn = (sourcePort: number): Uint8Array =>
   new Segment({
     srcPort: sourcePort,
@@ -84,4 +97,12 @@ const syn = (sourcePort: number): Uint8Array =>
       { kind: TcpOptionKind.MaxSegmentSize, value: 1024 },
       { kind: TcpOptionKind.FipsVersion, version: FIPS_VERSION, reserved: 0 },
     ],
+  }).encode();
+
+const reset = (sourcePort: number, destinationPort: number, sequence: number): Uint8Array =>
+  new Segment({
+    srcPort: sourcePort,
+    dstPort: destinationPort,
+    seq: sequence,
+    flags: new FlagSet(Flags.Rst),
   }).encode();

@@ -119,6 +119,39 @@ fn fin_wait_2_retention_must_be_bounded() {
     );
 }
 
+#[test]
+fn syn_received_requires_an_acceptable_reset_sequence() {
+    let mut server = Stack::new(
+        Config {
+            max_connections: 1,
+            ..Config::default()
+        },
+        5,
+    );
+    server.listen(443).unwrap();
+    server.input("peer".to_string(), &syn(50_000), 0).unwrap();
+    server.drain_outbound();
+
+    let mut outside = Segment::new(50_000, 443, 1_000_000);
+    outside.flags = Flags::RST;
+    server
+        .input("peer".to_string(), &outside.encode().unwrap(), 0)
+        .unwrap();
+    assert!(matches!(
+        server.input("other".to_string(), &syn(50_001), 0),
+        Err(StackError::ConnectionLimit)
+    ));
+
+    let mut exact = Segment::new(50_000, 443, 50_001);
+    exact.flags = Flags::RST;
+    server
+        .input("peer".to_string(), &exact.encode().unwrap(), 0)
+        .unwrap();
+    server
+        .input("other".to_string(), &syn(50_001), 0)
+        .expect("exact SYN-RECEIVED reset must release capacity");
+}
+
 fn syn(source_port: u16) -> Vec<u8> {
     let mut syn = Segment::new(source_port, 443, u32::from(source_port));
     syn.flags = Flags::SYN;

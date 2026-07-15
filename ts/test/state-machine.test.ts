@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { Config, ConnectionId, Flags, Segment, Stack, State } from "../src/index.js";
+import { Config, ConnectionId, FlagSet, Flags, Segment, Stack, State } from "../src/index.js";
 
 type Transform = (fromA: boolean, bytes: Uint8Array) => Uint8Array[];
 
@@ -154,6 +154,63 @@ describe("TCP/FIPS TypeScript state machine", () => {
     expect(pair.a.state(unrelated)).toBe(State.SynSent);
     expect(pair.a.state(replacement)).toBe(State.SynSent);
     expect(pair.a.drainOutbound()).toHaveLength(0);
+  });
+
+  test("RST validation survives stale tuple reuse and challenges an in-window guess", () => {
+    const pair = new Pair();
+    pair.b.listen(443);
+    const oldClient = pair.a.connectFromWithIsn("b", 50_000, 443, 100, pair.now);
+    pair.settle();
+    const oldServer = pair.b.accept(443)!;
+
+    pair.a.abort(oldClient);
+    const staleReset = pair.a.drainOutbound()[0]!.bytes;
+    pair.b.abort(oldServer);
+    pair.b.drainOutbound();
+
+    const newClient = pair.a.connectFromWithIsn("b", 50_000, 443, 1_000_000, pair.now);
+    pair.settle();
+    const newServer = pair.b.accept(443)!;
+    pair.b.input("a", staleReset, pair.now);
+    expect(pair.b.state(newServer)).toBe(State.Established);
+    expect(pair.b.drainOutbound()).toHaveLength(0);
+
+    pair.b.input("a", reset(50_000, 443, 1_000_002), pair.now);
+    expect(pair.b.state(newServer)).toBe(State.Established);
+    const challenge = pair.b.drainOutbound();
+    expect(challenge).toHaveLength(1);
+    const challengeSegment = Segment.decode(challenge[0]!.bytes);
+    expect(challengeSegment.flags.bits).toBe(Flags.Ack);
+    expect(challengeSegment.ack).toBe(1_000_001);
+
+    pair.b.input("a", reset(50_000, 443, 1_000_001 + 0xffff), pair.now);
+    expect(pair.b.state(newServer)).toBe(State.Established);
+    expect(pair.b.drainOutbound()).toHaveLength(0);
+
+    pair.a.abort(newClient);
+    const exact = pair.a.drainOutbound();
+    expect(exact).toHaveLength(1);
+    pair.b.input("a", exact[0]!.bytes, pair.now);
+    expect(pair.b.state(newServer)).toBeUndefined();
+  });
+
+  test("SYN-SENT ignores an unacknowledged RST but accepts a closed-port RST", () => {
+    const pair = new Pair();
+    const client = pair.a.connectFromWithIsn("b", 50_000, 443, 100, pair.now);
+    const syn = pair.a.drainOutbound()[0]!.bytes;
+    pair.a.input("b", reset(443, 50_000, 0), pair.now);
+    expect(pair.a.state(client)).toBe(State.SynSent);
+    expect(pair.a.drainOutbound()).toHaveLength(0);
+
+    pair.b.input("a", syn, pair.now);
+    const rejection = pair.b.drainOutbound();
+    expect(rejection).toHaveLength(1);
+    const rejectionSegment = Segment.decode(rejection[0]!.bytes);
+    expect(rejectionSegment.flags.has(Flags.Rst)).toBe(true);
+    expect(rejectionSegment.flags.has(Flags.Ack)).toBe(true);
+    expect(rejectionSegment.ack).toBe(101);
+    pair.a.input("b", rejection[0]!.bytes, pair.now);
+    expect(pair.a.state(client)).toBeUndefined();
   });
 
   test("lost SYN and first payload recover via RTO", () => {
@@ -343,3 +400,11 @@ describe("TCP/FIPS TypeScript state machine", () => {
 });
 
 const toHex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
+
+const reset = (sourcePort: number, destinationPort: number, sequence: number): Uint8Array =>
+  new Segment({
+    srcPort: sourcePort,
+    dstPort: destinationPort,
+    seq: sequence,
+    flags: new FlagSet(Flags.Rst),
+  }).encode();

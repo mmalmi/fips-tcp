@@ -11,6 +11,7 @@ use crate::wire::{FIPS_VERSION, Flags, Segment};
 
 include!("stack_types.rs");
 include!("stack_abort.rs");
+include!("connection_reset.rs");
 
 pub struct Stack<P> {
     config: Config,
@@ -413,11 +414,7 @@ impl<P: Clone> Connection<P> {
 
     fn on_segment(&mut self, segment: &Segment, now_ms: u64, config: &Config) -> Update {
         if segment.flags.contains(Flags::RST) {
-            return Update {
-                segments: Vec::new(),
-                accepted: false,
-                closed: true,
-            };
+            return self.on_reset(segment);
         }
 
         if self.state == State::SynSent {
