@@ -19,8 +19,9 @@ embeddings and standard-stack interoperability tests.
 
 ## Repository layout
 
-- `protocol`: the TCP/FIPS v1 contract and shared byte-exact wire vectors.
-- `rust/fips-tcp`: dependency-free Rust sans-I/O state machine.
+- `protocol`: the TCP/FIPS v1 contract.
+- `rust/fips-tcp`: dependency-free Rust sans-I/O state machine and shared
+  byte-exact wire vectors.
 - `rust/fips-tcp-endpoint`: async adapter for `fips_core::FipsEndpoint`.
 - `rust/interop-driver`: JSON-lines test driver used by TypeScript interop tests.
 - `rust/smoltcp-oracle`: unpublished test-only synthetic-IP bridge to the

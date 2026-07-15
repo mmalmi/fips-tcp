@@ -3,8 +3,14 @@ use std::path::Path;
 
 #[test]
 fn rust_source_files_stay_below_one_thousand_lines() {
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    check_directory(workspace);
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace = crate_root.parent().unwrap();
+    let source_root = if workspace.join("fips-tcp-endpoint").is_dir() {
+        workspace
+    } else {
+        crate_root
+    };
+    check_directory(source_root);
 }
 
 fn check_directory(directory: &Path) {

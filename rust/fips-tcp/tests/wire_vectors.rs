@@ -28,7 +28,7 @@ fn decode_hex(value: &str) -> Vec<u8> {
 #[test]
 fn shared_wire_vectors_decode_and_reencode_exactly() {
     let vectors: Vec<Vector> =
-        serde_json::from_str(include_str!("../../../protocol/wire-vectors.json")).unwrap();
+        serde_json::from_str(include_str!("../protocol/wire-vectors.json")).unwrap();
 
     for vector in vectors {
         let bytes = decode_hex(&vector.hex);

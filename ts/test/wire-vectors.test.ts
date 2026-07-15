@@ -19,7 +19,9 @@ interface Vector {
 
 const vectors = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL("../../protocol/wire-vectors.json", import.meta.url)),
+    fileURLToPath(
+      new URL("../../rust/fips-tcp/protocol/wire-vectors.json", import.meta.url),
+    ),
     "utf8",
   ),
 ) as Vector[];
