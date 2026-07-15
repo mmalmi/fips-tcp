@@ -10,6 +10,7 @@ use crate::types::{Config, ConnectionId, Outbound, StackError, State};
 use crate::wire::{FIPS_VERSION, Flags, Segment};
 
 include!("stack_types.rs");
+include!("stack_abort.rs");
 
 pub struct Stack<P> {
     config: Config,
@@ -329,52 +330,6 @@ where
     }
 }
 
-struct Connection<P> {
-    peer: P,
-    local_port: u16,
-    remote_port: u16,
-    state: State,
-    send_una: u32,
-    send_nxt: u32,
-    recv_nxt: u32,
-    remote_window: usize,
-    mss: usize,
-    receive_capacity: usize,
-    send_queue: VecDeque<u8>,
-    recv_queue: VecDeque<u8>,
-    reassembly: Vec<ReassemblySegment>,
-    unacked: VecDeque<TrackedSegment>,
-    rtt: RttEstimator,
-    reno: Reno,
-    duplicate_acks: u8,
-    close_requested: bool,
-    next_zero_window_probe_ms: Option<u64>,
-    zero_window_probes: u8,
-    read_closed: bool,
-    time_wait_until_ms: Option<u64>,
-}
-
-struct Update {
-    segments: Vec<Segment>,
-    accepted: bool,
-    closed: bool,
-}
-
-impl Update {
-    fn open(segments: Vec<Segment>) -> Self {
-        Self {
-            segments,
-            accepted: false,
-            closed: false,
-        }
-    }
-}
-
-struct AckOutcome {
-    fin_acked: bool,
-    retransmit: Option<Segment>,
-}
-
 impl<P: Clone> Connection<P> {
     fn client(
         peer: P,
@@ -451,6 +406,7 @@ impl<P: Clone> Connection<P> {
             next_zero_window_probe_ms: None,
             zero_window_probes: 0,
             read_closed: false,
+            fin_wait_2_until_ms: None,
             time_wait_until_ms: None,
         }
     }
@@ -512,7 +468,11 @@ impl<P: Clone> Connection<P> {
             }
             if outcome.fin_acked {
                 match self.state {
-                    State::FinWait1 => self.state = State::FinWait2,
+                    State::FinWait1 => {
+                        self.state = State::FinWait2;
+                        self.fin_wait_2_until_ms =
+                            Some(now_ms.saturating_add(config.fin_wait_2_ms));
+                    }
                     State::Closing => self.enter_time_wait(now_ms, config),
                     State::LastAck => {
                         return Update {
@@ -590,11 +550,13 @@ impl<P: Clone> Connection<P> {
     }
 
     fn poll(&mut self, now_ms: u64, config: &Config) -> Update {
-        if self.state == State::TimeWait
-            && self
-                .time_wait_until_ms
-                .is_some_and(|deadline| now_ms >= deadline)
-        {
+        let close_expired = match self.state {
+            State::FinWait2 => self.fin_wait_2_until_ms,
+            State::TimeWait => self.time_wait_until_ms,
+            _ => None,
+        }
+        .is_some_and(|deadline| now_ms >= deadline);
+        if close_expired {
             return Update {
                 segments: Vec::new(),
                 accepted: false,
@@ -827,7 +789,23 @@ impl<P: Clone> Connection<P> {
 
     fn enter_time_wait(&mut self, now_ms: u64, config: &Config) {
         self.state = State::TimeWait;
+        self.fin_wait_2_until_ms = None;
         self.time_wait_until_ms = Some(now_ms.saturating_add(config.time_wait_ms));
+    }
+
+    fn reset_segment(&self) -> Segment {
+        build_segment(
+            SegmentHeader {
+                local_port: self.local_port,
+                remote_port: self.remote_port,
+                seq: self.send_nxt,
+                ack: self.recv_nxt,
+                window: 0,
+                mss: self.mss as u16,
+                flags: Flags::RST,
+            },
+            Vec::new(),
+        )
     }
 
     fn send_tracked(

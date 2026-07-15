@@ -22,6 +22,7 @@ export declare class Connection {
     private duplicateAcks;
     private closeRequested;
     private readonly persist;
+    private finWait2UntilMs;
     private timeWaitUntilMs;
     private constructor();
     static client(peer: string, localPort: number, remotePort: number, isn: number, nowMs: number, config: Config): [Connection, Segment[]];
@@ -37,6 +38,7 @@ export declare class Connection {
     private drainReassembly;
     private onRemoteFin;
     private enterTimeWait;
+    resetSegment(): Segment;
     private sendTracked;
     private retransmitOldest;
     private flushData;

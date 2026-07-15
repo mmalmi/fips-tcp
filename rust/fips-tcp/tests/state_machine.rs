@@ -118,6 +118,93 @@ fn per_peer_limit_counts_active_and_time_wait_until_expiry() {
 }
 
 #[test]
+fn per_peer_limit_counts_fin_wait_2_until_ack_without_fin_deadline() {
+    let mut pair = Pair::new(Config {
+        max_connections_per_peer: 1,
+        fin_wait_2_ms: 50,
+        ..Config::default()
+    });
+    let (client, _server) = pair.connect();
+    pair.a.close(client, pair.now).unwrap();
+    pair.settle();
+    assert_eq!(pair.a.state(client), Some(State::FinWait2));
+    assert!(pair.a.connect("b".to_string(), 443, pair.now).is_err());
+
+    pair.advance(49);
+    pair.settle();
+    assert_eq!(pair.a.state(client), Some(State::FinWait2));
+    assert!(pair.a.connect("b".to_string(), 443, pair.now).is_err());
+
+    pair.advance(1);
+    pair.settle();
+    assert_eq!(pair.a.state(client), None);
+    pair.a
+        .connect("b".to_string(), 443, pair.now)
+        .expect("expired FIN-WAIT-2 must release per-peer capacity");
+}
+
+#[test]
+fn abort_after_zero_window_close_deadline_resets_peer_and_releases_capacity() {
+    let mut pair = Pair::new(Config {
+        mss: 8,
+        receive_buffer: 8,
+        max_connections_per_peer: 1,
+        ..Config::default()
+    });
+    let (client, server) = pair.connect();
+    pair.a.write(client, &[0x55; 8], pair.now).unwrap();
+    pair.settle();
+    pair.a.close(client, pair.now).unwrap();
+
+    pair.advance(50);
+    pair.settle();
+    assert_eq!(pair.a.state(client), Some(State::Established));
+    assert!(pair.a.connect("b".to_string(), 443, pair.now).is_err());
+
+    let unrelated = pair.a.connect("c".to_string(), 443, pair.now).unwrap();
+    pair.a.abort(client).unwrap();
+    assert_eq!(pair.a.state(client), None);
+    let outbound = pair.a.drain_outbound();
+    let reset_outbound: Vec<_> = outbound.iter().filter(|item| item.peer == "b").collect();
+    let unrelated_outbound: Vec<_> = outbound.iter().filter(|item| item.peer == "c").collect();
+    assert_eq!(reset_outbound.len(), 1, "abort must emit exactly one reset");
+    assert_eq!(
+        unrelated_outbound.len(),
+        1,
+        "another tuple must be preserved"
+    );
+    let reset = fips_tcp::wire::Segment::decode(&reset_outbound[0].bytes).unwrap();
+    assert_eq!(reset.flags, fips_tcp::wire::Flags::RST);
+    assert_eq!(reset.ack, None);
+    assert_eq!(reset.window, 0);
+
+    pair.b
+        .input("a".to_string(), &reset_outbound[0].bytes, pair.now)
+        .unwrap();
+    assert_eq!(pair.b.state(server), None);
+    let replacement = pair
+        .a
+        .connect("b".to_string(), 443, pair.now)
+        .expect("abort must release per-peer capacity immediately");
+    let replacement_syn = pair.a.drain_outbound();
+    assert_eq!(replacement_syn.len(), 1);
+    assert!(
+        fips_tcp::wire::Segment::decode(&replacement_syn[0].bytes)
+            .unwrap()
+            .flags
+            .contains(fips_tcp::wire::Flags::SYN)
+    );
+
+    assert!(matches!(
+        pair.a.abort(client),
+        Err(fips_tcp::StackError::UnknownConnection)
+    ));
+    assert_eq!(pair.a.state(unrelated), Some(State::SynSent));
+    assert_eq!(pair.a.state(replacement), Some(State::SynSent));
+    assert!(pair.a.drain_outbound().is_empty());
+}
+
+#[test]
 fn lost_syn_and_first_payload_recover_via_rto() {
     let mut pair = Pair::new(Config::default());
     pair.b.listen(443).unwrap();

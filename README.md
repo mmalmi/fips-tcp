@@ -79,15 +79,22 @@ tcp.write(stream, b"record", 1).await?;
 
 Services that permit only one stream per authenticated peer set Rust
 `Config::max_connections_per_peer` or TypeScript `maxConnectionsPerPeer` to
-`1`. Pending handshakes, established streams, closing streams, and TIME-WAIT
-all count toward the cap, so distinct source ports cannot bypass admission.
-The generic default remains effectively unlimited and preserves applications
-that intentionally multiplex several streams per peer.
+`1`. Pending handshakes, established streams, FIN-WAIT-2, other closing
+streams, and TIME-WAIT all count toward the cap, so distinct source ports
+cannot bypass admission. FIN-WAIT-2 expires after a configurable 60-second
+default if a peer acknowledges our FIN but never sends its own FIN. The generic
+per-peer default remains effectively unlimited and preserves applications that
+intentionally multiplex several streams per peer.
 
 Rust `FipsTcpEndpoint::receive_report` isolates malformed and over-capacity
 segments within each bounded FIPS receive batch. Its aggregate reports counts
 only; it neither retains attacker-controlled error strings nor logs each bad
 datagram. The compatibility `receive` method returns the total batch count.
+
+Graceful `close` remains flow-controlled. Protocol owners such as pubsub should
+give it a bounded application shutdown deadline, then call `abort` only when
+that deadline expires. Abort emits one TCP reset and immediately releases the
+retained tuple; it is not a replacement for normal orderly close.
 
 The TypeScript adapter accepts the public `FipsNode` service shape without a
 runtime package dependency:
@@ -128,4 +135,4 @@ same-language stacks, Rust↔TypeScript in both client/server directions, SYN,
 data, and FIN loss, reversal, duplication, sequence wrap, bounded buffers and
 connections, flow control, lost window updates, zero-window probes, RTO
 backoff, fast retransmit, RST, TIME-WAIT, structural TypeScript FIPS endpoint
-carriage, and real TypeScript/Rust FIPS endpoint carriage.
+carriage, explicit abort/reset, and real TypeScript/Rust FIPS endpoint carriage.

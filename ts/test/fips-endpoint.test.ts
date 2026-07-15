@@ -91,6 +91,29 @@ test("failed initial sends release capacity and preserve the endpoint error", as
   }
 });
 
+test("endpoint abort removes local and remote stream state", async () => {
+  const aNode = new MemoryFipsEndpoint("peer-a");
+  const bNode = new MemoryFipsEndpoint("peer-b");
+  aNode.connect(bNode);
+  bNode.connect(aNode);
+  const aTcp = new FipsTcpEndpoint(aNode, fspServicePort, {}, 0x4444n);
+  const bTcp = new FipsTcpEndpoint(bNode, fspServicePort, {}, 0x5555n);
+
+  try {
+    const client = await aTcp.connect("peer-b");
+    const server = await eventually(async () => bTcp.accept());
+    await aTcp.abort(client);
+    expect(await aTcp.state(client)).toBeUndefined();
+    await eventually(async () =>
+      (await bTcp.state(server)) === undefined ? true : undefined,
+    );
+    await expect(aTcp.abort(client)).rejects.toThrow(/unknown connection/i);
+    expect(await bTcp.state(server)).toBeUndefined();
+  } finally {
+    await Promise.all([aTcp.dispose(), bTcp.dispose()]);
+  }
+});
+
 async function collect(
   endpoint: FipsTcpEndpoint,
   id: number,

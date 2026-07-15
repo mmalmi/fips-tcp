@@ -4,7 +4,8 @@ import { buildSegment } from "./segment.js";
 import { after, before, beforeOrEqual, distance, inClosedInterval, u32 } from "./seq.js";
 import { State } from "./types.js";
 import { FIPS_VERSION, FlagSet, Flags } from "./wire.js";
-import { openUpdate, reassemblyEnd, trackedEnd, } from "./connection-types.js";
+import { openUpdate } from "./connection-types.js";
+import { reassemblyEnd, trackedEnd } from "./connection-types.js";
 import { PersistTimer } from "./persist.js";
 export class Connection {
     state;
@@ -27,6 +28,7 @@ export class Connection {
     duplicateAcks = 0;
     closeRequested = false;
     persist = new PersistTimer();
+    finWait2UntilMs;
     timeWaitUntilMs;
     constructor(peer, localPort, remotePort, state, sendIsn, recvNxt, config) {
         this.peer = peer;
@@ -96,8 +98,10 @@ export class Connection {
             if (outcome.retransmit !== undefined)
                 output.push(outcome.retransmit);
             if (outcome.finAcked) {
-                if (this.state === State.FinWait1)
+                if (this.state === State.FinWait1) {
                     this.state = State.FinWait2;
+                    this.finWait2UntilMs = deadlineAfter(nowMs, config.finWait2Ms);
+                }
                 else if (this.state === State.Closing)
                     this.enterTimeWait(nowMs, config);
                 else if (this.state === State.LastAck) {
@@ -150,7 +154,10 @@ export class Connection {
         return openUpdate();
     }
     poll(nowMs, config) {
-        if (this.state === State.TimeWait && this.timeWaitUntilMs !== undefined && nowMs >= this.timeWaitUntilMs) {
+        const closeDeadline = this.state === State.FinWait2
+            ? this.finWait2UntilMs
+            : this.state === State.TimeWait ? this.timeWaitUntilMs : undefined;
+        if (closeDeadline !== undefined && nowMs >= closeDeadline) {
             return { segments: [], accepted: false, closed: true };
         }
         const segments = [];
@@ -304,7 +311,11 @@ export class Connection {
     }
     enterTimeWait(nowMs, config) {
         this.state = State.TimeWait;
-        this.timeWaitUntilMs = nowMs + config.timeWaitMs;
+        this.finWait2UntilMs = undefined;
+        this.timeWaitUntilMs = deadlineAfter(nowMs, config.timeWaitMs);
+    }
+    resetSegment() {
+        return buildSegment(this.localPort, this.remotePort, this.sendNxt, this.recvNxt, 0, this.mss, new FlagSet(Flags.Rst), new Uint8Array());
     }
     sendTracked(flags, payload, nowMs) {
         const tracked = {
@@ -393,3 +404,4 @@ export class Connection {
         return Math.min(0xffff, this.availableWindow());
     }
 }
+const deadlineAfter = (nowMs, durationMs) => Math.min(Number.MAX_SAFE_INTEGER, nowMs + durationMs);

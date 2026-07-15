@@ -10,6 +10,8 @@ export interface Config {
     minRtoMs: number;
     maxRtoMs: number;
     maxRetransmissions: number;
+    /** Maximum retention after the peer ACKs our FIN without sending its FIN. */
+    finWait2Ms: number;
     timeWaitMs: number;
 }
 export declare const DEFAULT_CONFIG: Readonly<Config>;

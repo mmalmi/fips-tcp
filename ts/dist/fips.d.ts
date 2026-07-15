@@ -27,6 +27,8 @@ export declare class FipsTcpEndpoint {
     write(id: ConnectionId, bytes: Uint8Array, nowMs?: number): Promise<number>;
     read(id: ConnectionId, max: number, nowMs?: number): Promise<Uint8Array>;
     close(id: ConnectionId, nowMs?: number): Promise<void>;
+    /** Abort a stream after an application-level graceful shutdown deadline. */
+    abort(id: ConnectionId): Promise<void>;
     poll(nowMs?: number): Promise<void>;
     state(id: ConnectionId): Promise<State | undefined>;
     isReadClosed(id: ConnectionId): Promise<boolean>;

@@ -107,6 +107,18 @@ fn one_peer_syn_flood_cannot_consume_another_peers_capacity() {
     assert_eq!(server.drain_outbound().len(), 1);
 }
 
+#[test]
+#[should_panic(expected = "FIN-WAIT-2 duration must be non-zero")]
+fn fin_wait_2_retention_must_be_bounded() {
+    let _ = Stack::<String>::new(
+        Config {
+            fin_wait_2_ms: 0,
+            ..Config::default()
+        },
+        4,
+    );
+}
+
 fn syn(source_port: u16) -> Vec<u8> {
     let mut syn = Segment::new(source_port, 443, u32::from(source_port));
     syn.flags = Flags::SYN;

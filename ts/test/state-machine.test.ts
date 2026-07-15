@@ -99,6 +99,63 @@ describe("TCP/FIPS TypeScript state machine", () => {
     expect(() => pair.a.connect("b", 443, pair.now)).not.toThrow();
   });
 
+  test("per-peer limit counts FIN-WAIT-2 until ACK-without-FIN deadline", () => {
+    const pair = new Pair({ maxConnectionsPerPeer: 1, finWait2Ms: 50 });
+    const [client] = pair.connect();
+    pair.a.close(client, pair.now);
+    pair.settle();
+    expect(pair.a.state(client)).toBe(State.FinWait2);
+    expect(() => pair.a.connect("b", 443, pair.now)).toThrow(/connection limit/i);
+
+    pair.advance(49);
+    pair.settle();
+    expect(pair.a.state(client)).toBe(State.FinWait2);
+    expect(() => pair.a.connect("b", 443, pair.now)).toThrow(/connection limit/i);
+
+    pair.advance(1);
+    pair.settle();
+    expect(pair.a.state(client)).toBeUndefined();
+    expect(() => pair.a.connect("b", 443, pair.now)).not.toThrow();
+  });
+
+  test("abort after zero-window close deadline resets peer and releases capacity", () => {
+    const pair = new Pair({ mss: 8, receiveBuffer: 8, maxConnectionsPerPeer: 1 });
+    const [client, server] = pair.connect();
+    pair.a.write(client, new Uint8Array(8).fill(0x55), pair.now);
+    pair.settle();
+    pair.a.close(client, pair.now);
+
+    pair.advance(50);
+    pair.settle();
+    expect(pair.a.state(client)).toBe(State.Established);
+    expect(() => pair.a.connect("b", 443, pair.now)).toThrow(/connection limit/i);
+
+    const unrelated = pair.a.connect("c", 443, pair.now);
+    pair.a.abort(client);
+    expect(pair.a.state(client)).toBeUndefined();
+    const outbound = pair.a.drainOutbound();
+    const resetOutbound = outbound.filter((item) => item.peer === "b");
+    const unrelatedOutbound = outbound.filter((item) => item.peer === "c");
+    expect(resetOutbound).toHaveLength(1);
+    expect(unrelatedOutbound).toHaveLength(1);
+    const reset = Segment.decode(resetOutbound[0]!.bytes);
+    expect(reset.flags.bits).toBe(Flags.Rst);
+    expect(reset.ack).toBeUndefined();
+    expect(reset.window).toBe(0);
+
+    pair.b.input("a", resetOutbound[0]!.bytes, pair.now);
+    expect(pair.b.state(server)).toBeUndefined();
+    const replacement = pair.a.connect("b", 443, pair.now);
+    const replacementSyn = pair.a.drainOutbound();
+    expect(replacementSyn).toHaveLength(1);
+    expect(Segment.decode(replacementSyn[0]!.bytes).flags.has(Flags.Syn)).toBe(true);
+
+    expect(() => pair.a.abort(client)).toThrow(/unknown connection/i);
+    expect(pair.a.state(unrelated)).toBe(State.SynSent);
+    expect(pair.a.state(replacement)).toBe(State.SynSent);
+    expect(pair.a.drainOutbound()).toHaveLength(0);
+  });
+
   test("lost SYN and first payload recover via RTO", () => {
     const pair = new Pair();
     pair.b.listen(443);

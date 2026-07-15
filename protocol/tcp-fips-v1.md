@@ -69,7 +69,14 @@ state. Durable application delivery, offline store-and-forward, and idempotent
 effects are intentionally outside this protocol.
 
 Implementations must bound retained connections globally and may apply a
-stricter authenticated-peer cap. That cap counts pending, active, closing, and
-TIME-WAIT state. Rejecting a new tuple at either cap must not allocate
-connection state or disturb valid later segments from the same bounded carrier
-batch.
+stricter authenticated-peer cap. That cap counts pending, active, FIN-WAIT-2,
+other closing, and TIME-WAIT state. FIN-WAIT-2 retention must have a positive,
+finite local deadline so an ACK-without-FIN peer cannot hold capacity forever.
+Rejecting a new tuple at either cap must not allocate connection state or
+disturb valid later segments from the same bounded carrier batch.
+
+An application may abort a retained tuple after its own bounded graceful-close
+deadline. Following RFC 9293, the implementation sends one reset using
+`<SEQ=SND.NXT><CTL=RST>`, flushes all other queued transmissions, and removes
+local connection state immediately. Aborting an unknown tuple emits nothing
+and cannot disturb another tuple.

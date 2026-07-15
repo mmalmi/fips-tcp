@@ -20,6 +20,8 @@ export declare class Stack {
     write(id: ConnectionId, bytes: Uint8Array, nowMs: number): number;
     read(id: ConnectionId, max: number, nowMs: number): Uint8Array;
     close(id: ConnectionId, nowMs: number): void;
+    /** Abort one retained tuple, emit one active reset, and release it immediately. */
+    abort(id: ConnectionId): void;
     state(id: ConnectionId): State | undefined;
     isReadClosed(id: ConnectionId): boolean;
     peer(id: ConnectionId): string | undefined;

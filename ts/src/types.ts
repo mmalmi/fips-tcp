@@ -10,6 +10,8 @@ export interface Config {
   minRtoMs: number;
   maxRtoMs: number;
   maxRetransmissions: number;
+  /** Maximum retention after the peer ACKs our FIN without sending its FIN. */
+  finWait2Ms: number;
   timeWaitMs: number;
 }
 
@@ -24,6 +26,7 @@ export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze({
   minRtoMs: 200,
   maxRtoMs: 60_000,
   maxRetransmissions: 8,
+  finWait2Ms: 60_000,
   timeWaitMs: 30_000,
 });
 
@@ -65,6 +68,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
   positiveInteger(config.maxRtoMs, "maximum RTO");
   positiveInteger(config.maxRetransmissions, "retransmission limit");
   if (config.maxRetransmissions > 0xff) throw new Error("retransmission limit must fit in a u8");
+  positiveInteger(config.finWait2Ms, "FIN-WAIT-2 duration");
   if (config.initialRtoMs < config.minRtoMs || config.maxRtoMs < config.initialRtoMs) {
     throw new Error("invalid retransmission timeout bounds");
   }

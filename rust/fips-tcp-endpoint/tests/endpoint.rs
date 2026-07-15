@@ -70,6 +70,42 @@ async fn tcp_stream_runs_through_real_fips_endpoint_service_datagrams() {
 }
 
 #[tokio::test]
+async fn endpoint_abort_removes_both_loopback_stream_halves() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .expect("bind embedded endpoint"),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).expect("parse local identity");
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config::default(),
+        0x7654_3210,
+    )
+    .await
+    .expect("bind TCP service");
+
+    let client = tcp.connect(local, 0).await.expect("connect");
+    for _ in 0..3 {
+        tcp.receive(0).await.expect("receive handshake datagram");
+    }
+    let server = tcp.accept().expect("accept loopback connection");
+    tcp.abort(client).await.expect("abort client stream");
+    assert_eq!(tcp.state(client), None);
+    tcp.receive(1).await.expect("receive active reset");
+    assert_eq!(tcp.state(server), None);
+    assert!(matches!(
+        tcp.abort(client).await,
+        Err(AdapterError::Tcp(fips_tcp::StackError::UnknownConnection))
+    ));
+
+    endpoint.shutdown().await.expect("shutdown endpoint");
+}
+
+#[tokio::test]
 async fn failed_initial_flush_releases_connection_capacity_and_preserves_the_fips_error() {
     let endpoint = Arc::new(
         FipsEndpoint::builder()

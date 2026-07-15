@@ -60,6 +60,13 @@ export class FipsTcpEndpoint {
             await this.flush();
         });
     }
+    /** Abort a stream after an application-level graceful shutdown deadline. */
+    async abort(id) {
+        await this.enqueue(async () => {
+            this.stack.abort(id);
+            await this.flush();
+        });
+    }
     async poll(nowMs = Date.now()) {
         await this.enqueue(async () => {
             this.stack.poll(nowMs);

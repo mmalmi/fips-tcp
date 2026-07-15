@@ -119,6 +119,18 @@ export class Stack {
         checkNow(nowMs);
         this.finishUpdate(id, this.requireConnection(id).close(nowMs, this.config));
     }
+    /** Abort one retained tuple, emit one active reset, and release it immediately. */
+    abort(id) {
+        const connection = this.requireConnection(id);
+        this.outbound = this.outbound.filter((outbound) => {
+            if (outbound.peer !== connection.peer)
+                return true;
+            const segment = Segment.decode(outbound.bytes);
+            return segment.srcPort !== connection.localPort || segment.dstPort !== connection.remotePort;
+        });
+        this.emit(id, [connection.resetSegment()]);
+        this.removeConnection(id);
+    }
     state(id) {
         return this.connections.get(id)?.state;
     }

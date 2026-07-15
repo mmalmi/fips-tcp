@@ -15,6 +15,8 @@ pub struct Config {
     pub min_rto_ms: u64,
     pub max_rto_ms: u64,
     pub max_retransmissions: u8,
+    /// Maximum retention after the peer acknowledges our FIN without sending its FIN.
+    pub fin_wait_2_ms: u64,
     pub time_wait_ms: u64,
 }
 
@@ -31,6 +33,7 @@ impl Default for Config {
             min_rto_ms: 200,
             max_rto_ms: 60_000,
             max_retransmissions: 8,
+            fin_wait_2_ms: 60_000,
             time_wait_ms: 30_000,
         }
     }
@@ -63,6 +66,11 @@ impl Config {
         {
             return Err(StackError::InvalidConfig(
                 "invalid retransmission timeout bounds",
+            ));
+        }
+        if self.fin_wait_2_ms == 0 {
+            return Err(StackError::InvalidConfig(
+                "FIN-WAIT-2 duration must be non-zero",
             ));
         }
         Ok(())

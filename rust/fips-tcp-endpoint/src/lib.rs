@@ -116,6 +116,12 @@ impl FipsTcpEndpoint {
         self.flush().await
     }
 
+    /// Abort a stream after an application-level graceful shutdown deadline.
+    pub async fn abort(&mut self, id: ConnectionId) -> Result<(), AdapterError> {
+        self.stack.abort(id)?;
+        self.flush().await
+    }
+
     pub async fn poll(&mut self, now_ms: u64) -> Result<(), AdapterError> {
         self.stack.poll(now_ms);
         self.flush().await

@@ -67,6 +67,13 @@ test("one peer SYN flood cannot consume another peer's capacity", () => {
   expect(server.drainOutbound()).toHaveLength(1);
 });
 
+test("FIN-WAIT-2 retention must be a bounded positive duration", () => {
+  expect(() => new Stack({ finWait2Ms: 0 }, 4)).toThrow(/FIN-WAIT-2 duration/i);
+  expect(() => new Stack({ finWait2Ms: Number.MAX_SAFE_INTEGER + 1 }, 4)).toThrow(
+    /FIN-WAIT-2 duration/i,
+  );
+});
+
 const syn = (sourcePort: number): Uint8Array =>
   new Segment({
     srcPort: sourcePort,

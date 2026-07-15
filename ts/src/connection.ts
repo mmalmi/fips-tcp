@@ -4,15 +4,8 @@ import { buildSegment } from "./segment.js";
 import { after, before, beforeOrEqual, distance, inClosedInterval, u32 } from "./seq.js";
 import { Config, State } from "./types.js";
 import { FIPS_VERSION, FlagSet, Flags, Segment } from "./wire.js";
-import {
-  AckOutcome,
-  ConnectionUpdate,
-  openUpdate,
-  ReassemblySegment,
-  reassemblyEnd,
-  TrackedSegment,
-  trackedEnd,
-} from "./connection-types.js";
+import { AckOutcome, ConnectionUpdate, openUpdate, ReassemblySegment } from "./connection-types.js";
+import { reassemblyEnd, TrackedSegment, trackedEnd } from "./connection-types.js";
 import { PersistTimer } from "./persist.js";
 
 export class Connection {
@@ -37,6 +30,7 @@ export class Connection {
   private duplicateAcks = 0;
   private closeRequested = false;
   private readonly persist = new PersistTimer();
+  private finWait2UntilMs: number | undefined;
   private timeWaitUntilMs: number | undefined;
 
   private constructor(
@@ -69,15 +63,7 @@ export class Connection {
     nowMs: number,
     config: Config,
   ): [Connection, Segment[]] {
-    const connection = new Connection(
-      peer,
-      localPort,
-      remotePort,
-      State.SynSent,
-      isn,
-      0,
-      config,
-    );
+    const connection = new Connection(peer, localPort, remotePort, State.SynSent, isn, 0, config);
     return [connection, [connection.sendTracked(new FlagSet(Flags.Syn), new Uint8Array(), nowMs)]];
   }
 
@@ -89,13 +75,7 @@ export class Connection {
     config: Config,
   ): [Connection, Segment[]] {
     const connection = new Connection(
-      peer,
-      syn.dstPort,
-      syn.srcPort,
-      State.SynReceived,
-      isn,
-      u32(syn.seq + 1),
-      config,
+      peer, syn.dstPort, syn.srcPort, State.SynReceived, isn, u32(syn.seq + 1), config,
     );
     connection.updateRemoteWindow(syn.window, nowMs);
     connection.negotiateMss(syn, config);
@@ -149,8 +129,10 @@ export class Connection {
       const outcome = this.applyAck(segment.ack, nowMs, duplicate);
       if (outcome.retransmit !== undefined) output.push(outcome.retransmit);
       if (outcome.finAcked) {
-        if (this.state === State.FinWait1) this.state = State.FinWait2;
-        else if (this.state === State.Closing) this.enterTimeWait(nowMs, config);
+        if (this.state === State.FinWait1) {
+          this.state = State.FinWait2;
+          this.finWait2UntilMs = deadlineAfter(nowMs, config.finWait2Ms);
+        } else if (this.state === State.Closing) this.enterTimeWait(nowMs, config);
         else if (this.state === State.LastAck) {
           return { segments: output, accepted: false, closed: true };
         }
@@ -208,7 +190,10 @@ export class Connection {
   }
 
   poll(nowMs: number, config: Config): ConnectionUpdate {
-    if (this.state === State.TimeWait && this.timeWaitUntilMs !== undefined && nowMs >= this.timeWaitUntilMs) {
+    const closeDeadline = this.state === State.FinWait2
+      ? this.finWait2UntilMs
+      : this.state === State.TimeWait ? this.timeWaitUntilMs : undefined;
+    if (closeDeadline !== undefined && nowMs >= closeDeadline) {
       return { segments: [], accepted: false, closed: true };
     }
     const segments: Segment[] = [];
@@ -361,7 +346,15 @@ export class Connection {
 
   private enterTimeWait(nowMs: number, config: Config): void {
     this.state = State.TimeWait;
-    this.timeWaitUntilMs = nowMs + config.timeWaitMs;
+    this.finWait2UntilMs = undefined;
+    this.timeWaitUntilMs = deadlineAfter(nowMs, config.timeWaitMs);
+  }
+
+  resetSegment(): Segment {
+    return buildSegment(
+      this.localPort, this.remotePort, this.sendNxt, this.recvNxt, 0, this.mss,
+      new FlagSet(Flags.Rst), new Uint8Array(),
+    );
   }
 
   private sendTracked(flags: FlagSet, payload: Uint8Array, nowMs: number): Segment {
@@ -497,3 +490,6 @@ export class Connection {
     return Math.min(0xffff, this.availableWindow());
   }
 }
+
+const deadlineAfter = (nowMs: number, durationMs: number): number =>
+  Math.min(Number.MAX_SAFE_INTEGER, nowMs + durationMs);

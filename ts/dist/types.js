@@ -9,6 +9,7 @@ export const DEFAULT_CONFIG = Object.freeze({
     minRtoMs: 200,
     maxRtoMs: 60_000,
     maxRetransmissions: 8,
+    finWait2Ms: 60_000,
     timeWaitMs: 30_000,
 });
 export var State;
@@ -45,6 +46,7 @@ export function makeConfig(overrides = {}) {
     positiveInteger(config.maxRetransmissions, "retransmission limit");
     if (config.maxRetransmissions > 0xff)
         throw new Error("retransmission limit must fit in a u8");
+    positiveInteger(config.finWait2Ms, "FIN-WAIT-2 duration");
     if (config.initialRtoMs < config.minRtoMs || config.maxRtoMs < config.initialRtoMs) {
         throw new Error("invalid retransmission timeout bounds");
     }
