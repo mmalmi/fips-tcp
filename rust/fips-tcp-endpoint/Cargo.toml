@@ -1,6 +1,6 @@
 [package]
 name = "fips-tcp-endpoint"
-version = "0.1.0"
+version = "0.2.0"
 description = "FIPS endpoint adapter for TCP/FIPS streams"
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 fips-core = "0.4.0"
-fips-tcp = { version = "0.1.0", path = "../fips-tcp" }
+fips-tcp = { version = "0.2.0", path = "../fips-tcp" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "time"] }
