@@ -27,7 +27,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@fips/core": "github:mmalmi/fips-ts#df86f0ad519c174e9331a38c568e68dc51900cd8&path:packages/core",
+    "@fips/core": "https://github.com/mmalmi/fips-ts/releases/download/runtime-v0.0.29/fips-core-0.0.29.tgz",
     "@types/node": "^24.10.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
