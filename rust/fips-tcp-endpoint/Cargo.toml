@@ -1,15 +1,18 @@
 [package]
-name = "fips-tcp-endpoint"
-version = "0.2.0"
+name = "nvpn-fips-tcp-endpoint"
+version = "0.2.1"
 description = "FIPS endpoint adapter for TCP/FIPS streams"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 
+[lib]
+name = "fips_tcp_endpoint"
+
 [dependencies]
-fips-core = "0.4.0"
-fips-tcp = { version = "0.2.0", path = "../fips-tcp" }
+fips-core = { package = "nvpn-fips-core", version = "=0.4.65" }
+fips-tcp = { package = "nvpn-fips-tcp", version = "0.2.1", path = "../fips-tcp" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "time"] }

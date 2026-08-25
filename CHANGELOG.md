@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 - 2026-08-25
+
+- Publish the Rust crates as `nvpn-fips-tcp` and
+  `nvpn-fips-tcp-endpoint`, while preserving the existing `fips_tcp` and
+  `fips_tcp_endpoint` Rust import names.
+- Target `nvpn-fips-core 0.4.65` from the
+  [Nostr VPN FIPS implementation](https://git.iris.to/#/npub1xdhnr9mrv47kkrn95k6cwecearydeh8e895990n3acntwvmgk2dsdeeycm/fips),
+  which descends from the
+  [original FIPS implementation](https://github.com/jmcorgan/fips).
+
 ## 0.2.0 - 2026-07-15
 
 - Harden TCP connection admission, reset validation, retransmission, flow

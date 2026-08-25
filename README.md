@@ -4,6 +4,11 @@ TCP/FIPS provides reliable ordered byte streams directly over authenticated
 FIPS service datagrams. It has no IP layer, IP addresses, TUN device, TLS, or
 second encryption layer.
 
+The Rust endpoint adapter targets the
+[Nostr VPN FIPS implementation](https://git.iris.to/#/npub1xdhnr9mrv47kkrn95k6cwecearydeh8e895990n3acntwvmgk2dsdeeycm/fips),
+which descends from the
+[original FIPS implementation](https://github.com/jmcorgan/fips).
+
 The application explicitly chooses the outer FSP service port when binding the
 adapter. Inside that authenticated peer-to-peer channel, the normal TCP header
 supplies connection ports, byte sequence numbers, cumulative acknowledgments,
@@ -20,9 +25,10 @@ embeddings and standard-stack interoperability tests.
 ## Repository layout
 
 - `protocol`: the TCP/FIPS v1 contract.
-- `rust/fips-tcp`: dependency-free Rust sans-I/O state machine and shared
-  byte-exact wire vectors.
-- `rust/fips-tcp-endpoint`: async adapter for `fips_core::FipsEndpoint`.
+- `rust/fips-tcp`: dependency-free Rust sans-I/O state machine, published as
+  `nvpn-fips-tcp`, and shared byte-exact wire vectors.
+- `rust/fips-tcp-endpoint`: async adapter for `fips_core::FipsEndpoint`,
+  published as `nvpn-fips-tcp-endpoint`.
 - `rust/interop-driver`: JSON-lines test driver used by TypeScript interop tests.
 - `rust/smoltcp-oracle`: unpublished test-only synthetic-IP bridge to the
   pinned smoltcp state machine.
@@ -31,9 +37,9 @@ embeddings and standard-stack interoperability tests.
 - `SMOLTCP_REFERENCE.md`: the pinned smoltcp reference revision and the
   behavior mapped from it.
 
-The briefly published `fips-tcp-fips` 0.1.0 package is yanked and superseded
-by the clearer `fips-tcp-endpoint` name. New Rust consumers should use the
-latter.
+The prior unprefixed `fips-tcp` and `fips-tcp-endpoint` packages are frozen.
+The briefly published `fips-tcp-fips` 0.1.0 package remains yanked. New Rust
+consumers should use `nvpn-fips-tcp` and `nvpn-fips-tcp-endpoint`.
 
 The Rust and TypeScript implementations use the same wire encoding and expose
 the same deterministic clock-driven operations. Neither implementation calls
@@ -64,6 +70,15 @@ standard adapter mirrors its value as the hidden TCP listening port.
 Rust applications using the standard endpoint adapter create a
 `FipsTcpEndpoint`, connect or accept, and call `receive(now_ms)` from their event
 loop:
+
+```toml
+[dependencies]
+fips-core = { package = "nvpn-fips-core", version = "=0.4.65" }
+fips-tcp = { package = "nvpn-fips-tcp", version = "0.2.1" }
+fips-tcp-endpoint = { package = "nvpn-fips-tcp-endpoint", version = "0.2.1" }
+```
+
+The dependency aliases preserve the existing Rust import names:
 
 ```rust,no_run
 use std::sync::Arc;
@@ -168,8 +183,8 @@ The TypeScript endpoint tests include a self-contained structural FIPS service
 endpoint and two real `FipsNode` instances over an in-memory test transport. The
 unpublished test-only `@fips/core` package is pinned to an exact public
 [`mmalmi/fips-ts`](https://github.com/mmalmi/fips-ts) commit. The Rust endpoint
-test uses the `fips-core` version selected in `rust/Cargo.lock` and its real
-loopback service-datagram API.
+test uses the `nvpn-fips-core` package selected in `rust/Cargo.lock` through its
+`fips-core` dependency alias and its real loopback service-datagram API.
 
 The test matrix covers byte-exact shared vectors, malformed input, both
 same-language stacks, Rust↔TypeScript in both client/server directions, SYN,
