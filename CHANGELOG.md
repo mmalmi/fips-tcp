@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.6 - 2026-08-31
+
+- Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.70 so reliable
+  FIPS streams retry recovered direct paths promptly across repeated outages.
+- TCP/FIPS v1 wire bytes and the dependency-free `nvpn-fips-tcp` 0.2.1
+  state machine are unchanged.
+
 ## 0.2.5 - 2026-08-31
 
 - Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.69 so reliable
