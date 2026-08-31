@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.7 - 2026-08-31
+
+- Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.71 so reliable
+  FIPS streams reuse validated configured-peer identities during liveness
+  recovery.
+- TCP/FIPS v1 wire bytes and the dependency-free `nvpn-fips-tcp` 0.2.1
+  state machine are unchanged.
+
 ## 0.2.6 - 2026-08-31
 
 - Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.70 so reliable
