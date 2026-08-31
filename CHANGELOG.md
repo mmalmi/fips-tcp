@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.5 - 2026-08-31
+
+- Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.69 so reliable
+  FIPS streams retain direct recovery across consecutive outages and stale
+  receiver-report feedback.
+- TCP/FIPS v1 wire bytes and the dependency-free `nvpn-fips-tcp` 0.2.1
+  state machine are unchanged.
+
 ## 0.2.4 - 2026-08-28
 
 - Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.68 so reliable
