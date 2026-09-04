@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.9 - 2026-09-04
+
+- Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.73 so reliable
+  streams inherit the routing, transport cleanup, and BLE identity hardening.
+- TCP/FIPS v1 wire bytes, runtime behavior, and the dependency-free
+  `nvpn-fips-tcp` 0.2.1 state machine are unchanged.
+
 ## 0.2.8 - 2026-08-31
 
 - Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.72 so release
