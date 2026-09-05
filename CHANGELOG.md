@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.10 - 2026-09-06
+
+- Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.74 for bounded
+  replay bookkeeping, full-width counter checks, and authenticated direct-path updates.
+  New data bursts get the existing delivery-feedback window before triggering
+  fallback; repeated sends cannot conceal stalled receiver reports.
+- Verify the TypeScript adapter against the published `@fips/core` 0.0.42 runtime,
+  including authenticated carrier confirmation, FSP delivery reports, and
+  session-relative millisecond timestamps.
+- TCP/FIPS v1 wire bytes and the `nvpn-fips-tcp` 0.2.1 state machine are unchanged.
+
 ## 0.2.9 - 2026-09-04
 
 - Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.73 so reliable

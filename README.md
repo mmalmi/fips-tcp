@@ -73,9 +73,9 @@ loop:
 
 ```toml
 [dependencies]
-fips-core = { package = "nvpn-fips-core", version = "=0.4.65" }
+fips-core = { package = "nvpn-fips-core", version = "=0.4.74" }
 fips-tcp = { package = "nvpn-fips-tcp", version = "0.2.1" }
-fips-tcp-endpoint = { package = "nvpn-fips-tcp-endpoint", version = "0.2.1" }
+fips-tcp-endpoint = { package = "nvpn-fips-tcp-endpoint", version = "0.2.10" }
 ```
 
 The dependency aliases preserve the existing Rust import names:
@@ -181,8 +181,8 @@ pnpm --dir ts test
 
 The TypeScript endpoint tests include a self-contained structural FIPS service
 endpoint and two real `FipsNode` instances over an in-memory test transport. The
-unpublished test-only `@fips/core` package is pinned to an exact public
-[`mmalmi/fips-ts`](https://github.com/mmalmi/fips-ts) commit. The Rust endpoint
+test-only `@fips/core` dependency is pinned to the published
+[`fips-ts` 0.0.42 runtime](https://github.com/mmalmi/fips-ts/releases/tag/runtime-v0.0.42). The Rust endpoint
 test uses the `nvpn-fips-core` package selected in `rust/Cargo.lock` through its
 `fips-core` dependency alias and its real loopback service-datagram API.
 
