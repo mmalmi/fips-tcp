@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.11 - 2026-09-07
+
+- Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.75 so reliable
+  streams recover when a same-identity recipient restarts while the sender
+  retains its previous encrypted session.
+- TCP/FIPS v1 wire bytes and the `nvpn-fips-tcp` 0.2.1 state machine are unchanged.
+
 ## 0.2.10 - 2026-09-06
 
 - Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.74 for bounded
