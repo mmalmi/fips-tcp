@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.13 - 2026-09-09
+
+- Require FIPS core 0.4.77 so future-dated signed peer ratings cannot prevent
+  corrected scores from taking effect. This also retains the UDP receive-error
+  backoff introduced in endpoint 0.2.12.
+- TCP/FIPS v1 wire bytes and the `nvpn-fips-tcp` 0.2.1 state machine are unchanged.
+
 ## 0.2.11 - 2026-09-07
 
 - Update `nvpn-fips-tcp-endpoint` to `nvpn-fips-core` 0.4.75 so reliable
