@@ -1,5 +1,16 @@
 # Changelog
 
+## TCP 0.2.2 / endpoint 0.2.14 - 2026-09-09
+
+- Recover the rest of a timed-out TCP flight through advancing acknowledgments,
+  bounded to one repair per ACK and the existing retry limit. Many small writes
+  lost during a transit outage no longer wait for a separate, increasing timeout
+  for every missing segment. Rust and TypeScript retain matching behavior.
+- Preserve receive-window checks, sequence wrap, RTT sampling, and wire bytes.
+  Shared outage vectors and bidirectional Rust/TypeScript checks exercise recovery.
+- Require FIPS core 0.4.78 for retained service-route recovery after transit returns
+  and quiet operation when no advert relays are configured.
+
 ## 0.2.13 - 2026-09-09
 
 - Require FIPS core 0.4.77 so future-dated signed peer ratings cannot prevent

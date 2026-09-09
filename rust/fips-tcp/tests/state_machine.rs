@@ -727,3 +727,189 @@ fn lost_fin_is_retransmitted() {
     pair.settle();
     assert_eq!(pair.b.state(server), Some(State::CloseWait));
 }
+
+#[test]
+fn timed_out_small_segment_flight_recovers_on_ack_progress() {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RecoveryVector {
+        initial_sequence: u32,
+        warmup_bytes: usize,
+        chunk_bytes: usize,
+        chunk_count: usize,
+        dropped_poll_deltas_ms: Vec<u64>,
+        recovery_poll_delta_ms: u64,
+        max_recovery_pump_steps: usize,
+        expected_payload_bytes: usize,
+    }
+    let vectors: Vec<RecoveryVector> =
+        serde_json::from_str(include_str!("../protocol/recovery-vectors.json")).unwrap();
+    for vector in vectors {
+        let mut pair = Pair::new(Config::default());
+        pair.b.listen(443).unwrap();
+        let client = pair
+            .a
+            .connect_from_with_isn(
+                "b".to_string(),
+                50_000,
+                443,
+                vector.initial_sequence,
+                pair.now,
+            )
+            .unwrap();
+        pair.settle();
+        let server = pair.b.accept(443).unwrap();
+        pair.a
+            .write(client, &vec![0; vector.warmup_bytes], pair.now)
+            .unwrap();
+        pair.settle();
+        assert_eq!(
+            pair.b
+                .read(server, vector.warmup_bytes, pair.now)
+                .unwrap()
+                .len(),
+            vector.warmup_bytes
+        );
+        pair.settle();
+        let payload: Vec<u8> = (0..vector.chunk_count)
+            .flat_map(|index| vec![index as u8; vector.chunk_bytes])
+            .collect();
+        assert_eq!(payload.len(), vector.expected_payload_bytes);
+        for segment in payload.chunks(vector.chunk_bytes) {
+            assert_eq!(
+                pair.a.write(client, segment, pair.now).unwrap(),
+                segment.len()
+            );
+        }
+        let (_, marker) = pair.a.write_with_marker(client, &[], pair.now).unwrap();
+        let lost = pair.a.drain_outbound();
+        assert_eq!(
+            lost.len(),
+            vector.chunk_count,
+            "all small writes must be in the lost flight"
+        );
+        for delta in vector.dropped_poll_deltas_ms {
+            pair.advance(delta);
+            pair.a.poll(pair.now);
+            assert_eq!(pair.a.drain_outbound().len(), 1);
+        }
+        pair.advance(vector.recovery_poll_delta_ms);
+        pair.a.poll(pair.now);
+        assert!(vector.chunk_count <= vector.max_recovery_pump_steps);
+        for _ in 0..vector.chunk_count {
+            let repair = pair.a.drain_outbound();
+            assert_eq!(repair.len(), 1, "one repair follows each advancing ACK");
+            pair.b
+                .input("a".to_string(), &repair[0].bytes, pair.now)
+                .unwrap();
+            let acknowledgments = pair.b.drain_outbound();
+            assert_eq!(acknowledgments.len(), 1);
+            pair.a
+                .input("b".to_string(), &acknowledgments[0].bytes, pair.now)
+                .unwrap();
+        }
+        assert!(pair.a.drain_outbound().is_empty());
+        assert_eq!(pair.a.marker_status(&marker), MarkerStatus::Acked);
+        assert_eq!(
+            pair.b.read(server, payload.len(), pair.now).unwrap(),
+            payload
+        );
+        pair.settle();
+        pair.a.write(client, b"new first", pair.now).unwrap();
+        pair.a.write(client, b"new second", pair.now).unwrap();
+        let next_flight = pair.a.drain_outbound();
+        assert_eq!(next_flight.len(), 2);
+        pair.b
+            .input("a".to_string(), &next_flight[0].bytes, pair.now)
+            .unwrap();
+        for acknowledgment in pair.b.drain_outbound() {
+            pair.a
+                .input("b".to_string(), &acknowledgment.bytes, pair.now)
+                .unwrap();
+        }
+        assert!(
+            pair.a.drain_outbound().is_empty(),
+            "completed boundary must not repair a later normal flight"
+        );
+    }
+}
+
+#[test]
+fn timed_out_flight_repair_respects_ack_window_and_retry_bounds() {
+    for window in [0, u16::MAX] {
+        let mut pair = Pair::new(Config {
+            max_retransmissions: 2,
+            ..Config::default()
+        });
+        let (client, _server) = pair.connect();
+        pair.a.write(client, b"first", pair.now).unwrap();
+        pair.a.write(client, b"second", pair.now).unwrap();
+        let lost = pair.a.drain_outbound();
+        let first = fips_tcp::wire::Segment::decode(&lost[0].bytes).unwrap();
+        pair.advance(200);
+        pair.a.poll(pair.now);
+        assert_eq!(pair.a.drain_outbound().len(), 1);
+        let mut partial = fips_tcp::wire::Segment::decode(&ack(
+            first.dst_port,
+            first.src_port,
+            first.seq.wrapping_add(1),
+        ))
+        .unwrap();
+        partial.window = window;
+        pair.a
+            .input("b".to_string(), &partial.encode().unwrap(), pair.now)
+            .unwrap();
+        assert!(
+            pair.a.drain_outbound().is_empty(),
+            "an exhausted segment cannot get another repair"
+        );
+    }
+
+    let mut pair = Pair::new(Config::default());
+    let (client, server) = pair.connect();
+    pair.a.write(client, b"first", pair.now).unwrap();
+    pair.a.write(client, b"second", pair.now).unwrap();
+    let lost = pair.a.drain_outbound();
+    let first = fips_tcp::wire::Segment::decode(&lost[0].bytes).unwrap();
+    pair.advance(200);
+    pair.a.poll(pair.now);
+    let repair = pair.a.drain_outbound();
+    for acknowledgment in [first.seq, first.seq.wrapping_add(100_000)] {
+        pair.a
+            .input(
+                "b".to_string(),
+                &ack(first.dst_port, first.src_port, acknowledgment),
+                pair.now,
+            )
+            .unwrap();
+        assert!(
+            pair.a.drain_outbound().is_empty(),
+            "non-advancing or invalid ACK cannot drive repair"
+        );
+    }
+    pair.b
+        .input("a".to_string(), &repair[0].bytes, pair.now)
+        .unwrap();
+    let mut closed = fips_tcp::wire::Segment::decode(&pair.b.drain_outbound()[0].bytes).unwrap();
+    closed.window = 0;
+    pair.a
+        .input("b".to_string(), &closed.encode().unwrap(), pair.now)
+        .unwrap();
+    assert!(
+        pair.a.drain_outbound().is_empty(),
+        "newly closed window must suppress full repair"
+    );
+    pair.b.read(server, 5, pair.now).unwrap();
+    for reopened in pair.b.drain_outbound() {
+        pair.a
+            .input("b".to_string(), &reopened.bytes, pair.now)
+            .unwrap();
+    }
+    assert!(
+        pair.a.drain_outbound().is_empty(),
+        "window update alone cannot drive repair"
+    );
+    pair.advance(400);
+    pair.settle();
+    assert_eq!(pair.b.read(server, 6, pair.now).unwrap(), b"second");
+}

@@ -5,6 +5,7 @@ import { createInterface, Interface } from "node:readline";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { ConnectionId, MarkerStatus, Segment, Stack, State } from "../src/index.js";
+import { recoveryVectors } from "./recovery-vectors.js";
 
 interface WireOutbound {
   peer: string;
@@ -90,8 +91,8 @@ class CrossPair {
     return deliverTs.length + deliverRust.length;
   }
 
-  async settle(): Promise<void> {
-    for (let attempt = 0; attempt < 256; attempt += 1) {
+  async settle(maxSteps = 256): Promise<void> {
+    for (let attempt = 0; attempt < maxSteps; attempt += 1) {
       if ((await this.step()) === 0) return;
     }
     throw new Error("cross-language pair did not settle");
@@ -132,6 +133,80 @@ afterEach(async () => {
 });
 
 describe("live Rust/TypeScript TCP/FIPS interoperability", () => {
+  test.each(["TypeScript", "Rust"])("%s initiates a bidirectional shared outage recovery vector", async (initiator) => {
+    for (const vector of recoveryVectors) {
+      const pair = new CrossPair();
+      pairs.push(pair);
+      let tsId: ConnectionId;
+      let rustId: number;
+      if (initiator === "TypeScript") {
+        await pair.rustCommand({ op: "listen", port: 443 });
+        tsId = pair.ts.connectFromWithIsn("rust", 50_000, 443, vector.initialSequence, pair.now);
+        await pair.settle();
+        rustId = Number(await pair.rustCommand({ op: "accept", port: 443 }));
+      } else {
+        pair.ts.listen(443);
+        rustId = Number(await pair.rustCommand({ op: "connect", peer: "ts", localPort: 50_000,
+          remotePort: 443, isn: vector.initialSequence, now: pair.now }));
+        await pair.settle();
+        tsId = pair.ts.accept(443)!;
+      }
+      const warmup = new Uint8Array(vector.warmupBytes).fill(0x31);
+      expect(pair.ts.write(tsId, warmup, pair.now)).toBe(warmup.length);
+      expect(await pair.rustCommand({ op: "write", id: rustId, bytes: toHex(warmup), now: pair.now })).toBe(warmup.length);
+      await pair.settle();
+      expect(pair.ts.read(tsId, warmup.length, pair.now)).toEqual(warmup);
+      expect(fromHex(String(await pair.rustCommand({ op: "read", id: rustId,
+        max: warmup.length, now: pair.now })))).toEqual(warmup);
+      await pair.settle();
+
+      const toRust = new Uint8Array(vector.expectedPayloadBytes).fill(0x73);
+      const toTs = new Uint8Array(vector.expectedPayloadBytes).fill(0xa7);
+      const tsMarkers = [];
+      const rustMarkers = [];
+      for (let index = 0; index < vector.chunkCount; index += 1) {
+        const start = index * vector.chunkBytes;
+        const tsWrite = pair.ts.writeWithMarker(tsId, toRust.subarray(start, start + vector.chunkBytes), pair.now);
+        const rustWrite = await pair.rustCommand({ op: "writeWithMarker", id: rustId,
+          bytes: toHex(toTs.subarray(start, start + vector.chunkBytes)), now: pair.now }) as DriverMarkerWrite;
+        expect(tsWrite.accepted).toBe(vector.chunkBytes);
+        expect(rustWrite.accepted).toBe(vector.chunkBytes);
+        tsMarkers.push(tsWrite.marker);
+        rustMarkers.push(rustWrite.marker);
+      }
+      await pair.step((fromTs, fromRust) => {
+        for (const packets of [fromTs, fromRust]) {
+          expect(packets).toHaveLength(vector.chunkCount);
+          expect(packets.every((bytes) => Segment.decode(bytes).payload.length === vector.chunkBytes)).toBe(true);
+        }
+        const wrapped = (initiator === "TypeScript" ? fromTs : fromRust).map((bytes) => Segment.decode(bytes));
+        expect(wrapped[0]!.seq).toBeGreaterThan(wrapped.at(-1)!.seq);
+        return [[], []];
+      });
+      for (const delta of vector.droppedPollDeltasMs) {
+        pair.advance(delta);
+        await pair.step((fromTs, fromRust) => {
+          expect(fromTs).toHaveLength(1);
+          expect(fromRust).toHaveLength(1);
+          return [[], []];
+        });
+      }
+      pair.advance(vector.recoveryPollDeltaMs);
+      const restoredTime = pair.now;
+      await pair.settle(vector.maxRecoveryPumpSteps);
+      expect(pair.ts.read(tsId, toTs.length, pair.now)).toEqual(toTs);
+      expect(fromHex(String(await pair.rustCommand({ op: "read", id: rustId,
+        max: toRust.length, now: pair.now })))).toEqual(toRust);
+      for (const marker of tsMarkers) expect(pair.ts.markerStatus(marker)).toBe(MarkerStatus.Acked);
+      for (const marker of rustMarkers) {
+        expect(await pair.rustCommand({ op: "markerStatus", marker })).toBe("acked");
+      }
+      expect(pair.now).toBe(restoredTime);
+      await pair.settle();
+      expect(await pair.step()).toBe(0);
+    }
+  }, 30_000);
+
   test("send markers cross the hostile Rust/TypeScript wire schedule exactly", async () => {
     const pair = new CrossPair();
     pairs.push(pair);

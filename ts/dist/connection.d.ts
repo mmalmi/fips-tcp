@@ -21,6 +21,7 @@ export declare class Connection {
     private readonly rtt;
     private readonly reno;
     private duplicateAcks;
+    private rtoRecoveryUntil;
     private closeRequested;
     private readonly persist;
     readonly sendProgress: SendProgress;

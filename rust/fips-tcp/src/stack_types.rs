@@ -23,6 +23,7 @@ struct Connection<P> {
     rtt: RttEstimator,
     reno: Reno,
     duplicate_acks: u8,
+    rto_recovery_until: Option<u32>,
     close_requested: bool,
     next_zero_window_probe_ms: Option<u64>,
     zero_window_probes: u8,

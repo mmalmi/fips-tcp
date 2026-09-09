@@ -13,6 +13,7 @@ use crate::wire::{FIPS_VERSION, Flags, Segment};
 include!("stack_types.rs");
 include!("stack_abort.rs");
 include!("connection_reset.rs");
+include!("connection_recovery.rs");
 include!("stack_marker.rs");
 
 pub struct Stack<P> {
@@ -400,6 +401,7 @@ impl<P: Clone> Connection<P> {
             rtt: RttEstimator::new(config.initial_rto_ms, config.min_rto_ms, config.max_rto_ms),
             reno: Reno::new(mss),
             duplicate_acks: 0,
+            rto_recovery_until: None,
             close_requested: false,
             next_zero_window_probe_ms: None,
             zero_window_probes: 0,
@@ -456,6 +458,7 @@ impl<P: Clone> Connection<P> {
 
         let mut output = Vec::new();
         if let Some(ack) = segment.ack {
+            let previous_una = self.send_una;
             let duplicate = ack == self.send_una && segment.payload.is_empty();
             let outcome = self.apply_ack(ack, now_ms, duplicate);
             if let Some(retransmit) = outcome.retransmit {
@@ -481,6 +484,11 @@ impl<P: Clone> Connection<P> {
             }
             if in_closed_interval(ack, self.send_una, self.send_nxt) {
                 self.update_remote_window(segment.window, now_ms);
+            }
+            if after(self.send_una, previous_una)
+                && let Some(repair) = self.repair_timed_out_flight(now_ms, config)
+            {
+                output.push(repair);
             }
         }
 
@@ -602,6 +610,7 @@ impl<P: Clone> Connection<P> {
                 };
             }
             let in_flight = distance(self.send_una, self.send_nxt);
+            self.rto_recovery_until.get_or_insert(self.send_nxt);
             self.reno.on_timeout(in_flight);
             self.rtt.on_timeout();
             if let Some(retransmit) = self.retransmit_oldest(now_ms, true) {
@@ -666,6 +675,9 @@ impl<P: Clone> Connection<P> {
             acked_payload += count;
         }
         self.send_una = ack;
+        if self.rto_recovery_until.is_some_and(|end| !before(ack, end)) {
+            self.rto_recovery_until = None;
+        }
         if let Some(sample) = rtt_sample {
             self.rtt.sample(sample);
         }

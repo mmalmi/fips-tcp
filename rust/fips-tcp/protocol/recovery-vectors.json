@@ -1,0 +1,13 @@
+[
+  {
+    "name": "timed-out-small-flight-crosses-sequence-wrap",
+    "initialSequence": 4294948864,
+    "warmupBytes": 16384,
+    "chunkBytes": 101,
+    "chunkCount": 44,
+    "droppedPollDeltasMs": [200, 400, 800],
+    "recoveryPollDeltaMs": 1600,
+    "maxRecoveryPumpSteps": 128,
+    "expectedPayloadBytes": 4444
+  }
+]

@@ -29,6 +29,7 @@ export class Connection {
   private readonly rtt: RttEstimator;
   private readonly reno: Reno;
   private duplicateAcks = 0;
+  private rtoRecoveryUntil: number | undefined;
   private closeRequested = false;
   private readonly persist = new PersistTimer();
   readonly sendProgress = new SendProgress();
@@ -131,6 +132,7 @@ export class Connection {
 
     const output: Segment[] = [];
     if (segment.ack !== undefined) {
+      const previousUna = this.sendUna;
       const duplicate = segment.ack === this.sendUna && segment.payload.length === 0;
       const outcome = this.applyAck(segment.ack, nowMs, duplicate);
       if (outcome.retransmit !== undefined) output.push(outcome.retransmit);
@@ -145,6 +147,12 @@ export class Connection {
       }
       if (inClosedInterval(segment.ack, this.sendUna, this.sendNxt)) {
         this.updateRemoteWindow(segment.window, nowMs);
+      }
+      const oldest = this.unacked[0];
+      if (after(this.sendUna, previousUna) && this.rtoRecoveryUntil !== undefined &&
+          this.remoteWindow > 0 && oldest !== undefined && oldest.transmissions < config.maxRetransmissions) {
+        // Repair one hole in the timed-out flight using this ACK's current window.
+        output.push(this.retransmitOldest(nowMs, false)!);
       }
     }
 
@@ -221,6 +229,7 @@ export class Connection {
       if (oldest.transmissions >= config.maxRetransmissions) {
         return { segments, accepted: false, closed: true };
       }
+      this.rtoRecoveryUntil ??= this.sendNxt;
       this.reno.onTimeout(distance(this.sendUna, this.sendNxt));
       this.rtt.onTimeout();
       const retransmit = this.retransmitOldest(nowMs, true);
@@ -269,6 +278,7 @@ export class Connection {
       ackedPayload += count;
     }
     this.sendUna = ack;
+    if (this.rtoRecoveryUntil !== undefined && !before(ack, this.rtoRecoveryUntil)) this.rtoRecoveryUntil = undefined;
     if (rttSample !== undefined) this.rtt.sample(rttSample);
     this.reno.onAck(ackedPayload);
     this.sendProgress.acknowledge(ackedPayload);
@@ -384,16 +394,7 @@ export class Connection {
     tracked.retransmitted = true;
     tracked.transmissions = Math.min(0xff, tracked.transmissions + 1);
     if (timeout) this.duplicateAcks = 0;
-    return buildSegment(
-      this.localPort,
-      this.remotePort,
-      tracked.seq,
-      this.recvNxt,
-      this.availableWindowU16(),
-      this.mss,
-      tracked.flags,
-      tracked.payload,
-    );
+    return this.segmentFor(tracked);
   }
 
   private flushData(nowMs: number): Segment[] {
