@@ -1,5 +1,13 @@
 # Changelog
 
+## Endpoint 0.2.16 - 2026-09-10
+
+- Require FIPS core 0.4.81 so prepared crypto buffers reserve space for the
+  admitted packet batch, reducing singleton control-traffic allocations.
+- Recover routed-session rekey through bounded coordinate rediscovery after
+  topology changes clear cached coordinates while the data route still works.
+- TCP/FIPS v1 wire bytes and the `nvpn-fips-tcp` 0.2.2 state machine are unchanged.
+
 ## TCP 0.2.2 / endpoint 0.2.14 - 2026-09-09
 
 - Recover the rest of a timed-out TCP flight through advancing acknowledgments,
