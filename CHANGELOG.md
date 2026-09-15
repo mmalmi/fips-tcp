@@ -1,5 +1,10 @@
 # Changelog
 
+## Endpoint 0.2.17 - 2026-09-15
+
+- Require FIPS core 0.4.82 for recovery of unanswered sparse traffic and
+  interrupted UDP path handshakes.
+
 ## Endpoint 0.2.16 - 2026-09-10
 
 - Require FIPS core 0.4.81 so prepared crypto buffers reserve space for the
