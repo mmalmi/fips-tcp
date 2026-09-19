@@ -1,0 +1,65 @@
+[
+  {
+    "name": "multiple identities cannot consume the reserved slot",
+    "maxConnections": 4, "maxConnectionsPerPeer": 2, "reserved": 1, "eligible": ["paid"],
+    "steps": [
+      {"op":"syn","peer":"a","port":50000,"ok":true,"outbound":1,"connections":1},
+      {"op":"syn","peer":"a","port":50001,"ok":true,"outbound":1,"connections":2},
+      {"op":"syn","peer":"a","port":50002,"ok":false,"outbound":0,"connections":2},
+      {"op":"syn","peer":"b","port":50000,"ok":true,"outbound":1,"connections":3},
+      {"op":"syn","peer":"c","port":50000,"ok":false,"outbound":0,"connections":3},
+      {"op":"syn","peer":"paid","port":50000,"ok":true,"outbound":1,"connections":4},
+      {"op":"connect","peer":"paid","port":52000,"ok":false,"outbound":0,"connections":4},
+      {"op":"eligible","peers":[],"ok":true,"outbound":0,"connections":4},
+      {"op":"syn","peer":"paid","port":50000,"ok":true,"outbound":1,"connections":4},
+      {"op":"reset","peer":"a","port":50000,"ok":true,"outbound":0,"connections":3},
+      {"op":"connect","peer":"paid","port":52000,"ok":false,"outbound":0,"connections":3},
+      {"op":"eligible","peers":["paid"],"ok":true,"outbound":0,"connections":3},
+      {"op":"connect","peer":"paid","port":52000,"ok":true,"outbound":1,"connections":4},
+      {"op":"abort","id":5,"ok":true,"outbound":1,"connections":3},
+      {"op":"reset","peer":"b","port":50000,"ok":true,"outbound":0,"connections":2},
+      {"op":"syn","peer":"c","port":50000,"ok":true,"outbound":1,"connections":3}
+    ]
+  },
+  {
+    "name": "defaults disabling and invalid changes preserve capacity semantics",
+    "maxConnections": 3, "maxConnectionsPerPeer": 2, "reserved": 0, "eligible": [],
+    "steps": [
+      {"op":"connect","peer":"a","port":52000,"ok":true,"outbound":1,"connections":1},
+      {"op":"syn","peer":"b","port":50000,"ok":true,"outbound":1,"connections":2},
+      {"op":"reserve","slots":3,"ok":false,"outbound":0,"connections":2},
+      {"op":"syn","peer":"c","port":50000,"ok":true,"outbound":1,"connections":3},
+      {"op":"abort","id":1,"ok":true,"outbound":1,"connections":2},
+      {"op":"reserve","slots":1,"ok":true,"outbound":0,"connections":2},
+      {"op":"syn","peer":"d","port":50000,"ok":false,"outbound":0,"connections":2},
+      {"op":"reserve","slots":0,"ok":true,"outbound":0,"connections":2},
+      {"op":"syn","peer":"d","port":50000,"ok":true,"outbound":1,"connections":3}
+    ]
+  },
+  {
+    "name": "eligible identities still obey total and peer limits",
+    "maxConnections": 5, "maxConnectionsPerPeer": 1, "reserved": 2, "eligible": ["paid", "other-paid"],
+    "steps": [
+      {"op":"syn","peer":"a","port":50000,"ok":true,"outbound":1,"connections":1},
+      {"op":"syn","peer":"b","port":50000,"ok":true,"outbound":1,"connections":2},
+      {"op":"syn","peer":"c","port":50000,"ok":true,"outbound":1,"connections":3},
+      {"op":"syn","peer":"paid","port":50000,"ok":true,"outbound":1,"connections":4},
+      {"op":"connect","peer":"paid","port":52000,"ok":false,"outbound":0,"connections":4},
+      {"op":"connect","peer":"other-paid","port":52000,"ok":true,"outbound":1,"connections":5},
+      {"op":"syn","peer":"d","port":50000,"ok":false,"outbound":0,"connections":5}
+    ]
+  },
+  {
+    "name": "handshake timeout restores both ordinary and reserved capacity",
+    "maxConnections": 2, "maxConnectionsPerPeer": 1, "maxRetransmissions": 1,
+    "reserved": 1, "eligible": ["paid"],
+    "steps": [
+      {"op":"syn","peer":"a","port":50000,"ok":true,"outbound":1,"connections":1},
+      {"op":"syn","peer":"b","port":50000,"ok":false,"outbound":0,"connections":1},
+      {"op":"syn","peer":"paid","port":50000,"ok":true,"outbound":1,"connections":2},
+      {"op":"poll","now":1000,"ok":true,"outbound":0,"connections":0},
+      {"op":"syn","peer":"b","port":50000,"now":1000,"ok":true,"outbound":1,"connections":1},
+      {"op":"syn","peer":"paid","port":50000,"now":1000,"ok":true,"outbound":1,"connections":2}
+    ]
+  }
+]

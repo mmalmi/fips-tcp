@@ -118,6 +118,47 @@ fn per_peer_limit_counts_active_and_time_wait_until_expiry() {
 }
 
 #[test]
+fn reservation_changes_preserve_existing_streams_and_time_wait_limits() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let eligible = Arc::new(AtomicBool::new(true));
+    let mut pair = Pair::new(Config {
+        max_connections: 2,
+        max_connections_per_peer: 1,
+        time_wait_ms: 50,
+        ..Config::default()
+    });
+    for stack in [&mut pair.a, &mut pair.b] {
+        let eligible = eligible.clone();
+        stack
+            .set_connection_reservation(1, Arc::new(move |_| eligible.load(Ordering::Relaxed)))
+            .unwrap();
+    }
+    let (client, server) = pair.connect();
+    pair.b.connect("half-open".into(), 443, pair.now).unwrap();
+    pair.b.drain_outbound();
+    eligible.store(false, Ordering::Relaxed);
+    assert!(pair.b.connect("new-peer".into(), 443, pair.now).is_err());
+    assert_eq!(pair.a.write(client, b"request", pair.now).unwrap(), 7);
+    assert_eq!(pair.b.write(server, b"reply", pair.now).unwrap(), 5);
+    pair.settle();
+    assert_eq!(pair.b.read(server, 16, pair.now).unwrap(), b"request");
+    assert_eq!(pair.a.read(client, 16, pair.now).unwrap(), b"reply");
+    pair.a.close(client, pair.now).unwrap();
+    pair.settle();
+    pair.b.close(server, pair.now).unwrap();
+    pair.settle();
+    assert_eq!(pair.a.state(client), Some(State::TimeWait));
+    assert!(pair.a.connect("new-peer".into(), 443, pair.now).is_err());
+    pair.advance(50);
+    pair.settle();
+    assert_eq!(pair.a.state(client), None);
+    pair.a.connect("new-peer".into(), 443, pair.now).unwrap();
+}
+
+#[test]
 fn per_peer_limit_counts_fin_wait_2_until_ack_without_fin_deadline() {
     let mut pair = Pair::new(Config {
         max_connections_per_peer: 1,

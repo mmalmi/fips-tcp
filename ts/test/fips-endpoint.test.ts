@@ -4,7 +4,13 @@ import {
   FipsDatagramEndpoint,
   FipsServiceContext,
   FipsTcpEndpoint,
+  FIPS_VERSION,
+  FlagSet,
+  Flags,
   MarkerStatus,
+  Segment,
+  State,
+  TcpOptionKind,
 } from "../src/index.js";
 
 type ServiceHandler = (context: FipsServiceContext) => Promise<void> | void;
@@ -117,6 +123,45 @@ test("endpoint abort removes local and remote stream state", async () => {
     expect(await bTcp.state(server)).toBeUndefined();
   } finally {
     await Promise.all([aTcp.dispose(), bTcp.dispose()]);
+  }
+});
+
+test("reservation rejects only new tuples and preserves later carrier operations", async () => {
+  let handler: ServiceHandler | undefined;
+  const sent: Uint8Array[] = [];
+  const node: FipsDatagramEndpoint = {
+    registerService(_port, callback) { handler = callback; return () => { handler = undefined; }; },
+    async sendDatagram(args) { sent.push(args.payload); },
+  };
+  const tcp = new FipsTcpEndpoint(node, fspServicePort, { maxConnections: 2, maxConnectionsPerPeer: 1 });
+  const inject = async (peer: string, segment: Segment): Promise<void> => {
+    await handler!({ src: peer, srcPort: fspServicePort, dstPort: fspServicePort, payload: segment.encode() });
+  };
+  const syn = (port: number): Segment => new Segment({
+    srcPort: port, dstPort: fspServicePort, seq: port, flags: new FlagSet(Flags.Syn),
+    options: [{ kind: TcpOptionKind.FipsVersion, version: FIPS_VERSION, reserved: 0 }],
+  });
+  try {
+    await tcp.setConnectionReservation(1, (peer) => peer === "paid");
+    await inject("ordinary", syn(50_000));
+    expect(sent.splice(0)).toHaveLength(1);
+    await expect(inject("unknown", syn(50_001))).rejects.toThrow(/connection limit/i);
+    expect(sent).toHaveLength(0);
+    await inject("paid", syn(50_002));
+    expect(sent).toHaveLength(1);
+    const reply = Segment.decode(sent.shift()!);
+    await tcp.setConnectionReservation(1, () => false);
+    await inject("paid", new Segment({ srcPort: 50_002, dstPort: fspServicePort,
+      seq: 50_003, ack: (reply.seq + 1) >>> 0, flags: new FlagSet(Flags.Ack), window: 65535,
+      payload: new TextEncoder().encode("record"),
+    }));
+    const accepted = await tcp.accept();
+    expect(accepted).toBeDefined();
+    expect(await tcp.state(accepted!)).toBe(State.Established);
+    expect(await tcp.peer(accepted!)).toBe("paid");
+    expect(new TextDecoder().decode(await tcp.read(accepted!, 16))).toBe("record");
+  } finally {
+    await tcp.dispose();
   }
 });
 

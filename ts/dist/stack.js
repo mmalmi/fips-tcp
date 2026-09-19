@@ -14,10 +14,25 @@ export class Stack {
     nextConnectionId = 1;
     nextEphemeralPort = 49_152;
     isnState;
+    reservation;
     constructor(config = {}, isnSeed = 1n) {
         this.config = makeConfig(config);
         const seed = typeof isnSeed === "bigint" ? isnSeed : BigInt(isnSeed);
         this.isnState = seed > 0n ? seed : 1n;
+    }
+    /**
+     * Reserve existing capacity for locally selected peers; per-peer limits remain.
+     * Ordinary allocations require retained < maxConnections - slots. The cheap,
+     * synchronous classifier affects only new tuples, never existing streams.
+     * Zero disables; installing a reservation does not evict retained connections.
+     */
+    setConnectionReservation(slots, eligible) {
+        if (!Number.isSafeInteger(slots) || slots < 0 || slots >= this.config.maxConnections) {
+            throw new Error("reserved connections must leave ordinary capacity");
+        }
+        if (typeof eligible !== "function")
+            throw new Error("connection classifier must be a function");
+        this.reservation = slots === 0 ? undefined : { slots, eligible };
     }
     listen(port) {
         checkPort(port);
@@ -207,6 +222,12 @@ export class Stack {
         }
         if (this.connections.size >= this.config.maxConnections ||
             peerConnections >= this.config.maxConnectionsPerPeer) {
+            throw new Error("connection limit reached");
+        }
+        const reservation = this.reservation;
+        if (reservation !== undefined &&
+            this.connections.size >= this.config.maxConnections - reservation.slots &&
+            !reservation.eligible(peer)) {
             throw new Error("connection limit reached");
         }
     }
