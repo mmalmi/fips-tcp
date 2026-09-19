@@ -11,6 +11,7 @@ use crate::types::{Config, ConnectionId, Outbound, StackError, State};
 use crate::wire::{FIPS_VERSION, Flags, Segment};
 
 include!("stack_types.rs");
+include!("stack_admission.rs");
 include!("stack_abort.rs");
 include!("connection_reset.rs");
 include!("connection_recovery.rs");
@@ -18,6 +19,7 @@ include!("stack_marker.rs");
 
 pub struct Stack<P> {
     config: Config,
+    reservation: Option<ConnectionReservation<P>>,
     listeners: HashSet<u16>,
     accepts: HashMap<u16, VecDeque<ConnectionId>>,
     connections: HashMap<ConnectionId, Connection<P>>,
@@ -36,6 +38,7 @@ where
         config.validate().expect("invalid TCP/FIPS configuration");
         Self {
             config,
+            reservation: None,
             listeners: HashSet::new(),
             accepts: HashMap::new(),
             connections: HashMap::new(),
@@ -279,21 +282,6 @@ where
                 local_port: connection.local_port,
                 remote_port: connection.remote_port,
             });
-        }
-    }
-
-    fn ensure_connection_capacity(&self, peer: &P) -> Result<(), StackError> {
-        let peer_connections = self
-            .connections
-            .values()
-            .filter(|connection| &connection.peer == peer)
-            .count();
-        if self.connections.len() >= self.config.max_connections
-            || peer_connections >= self.config.max_connections_per_peer
-        {
-            Err(StackError::ConnectionLimit)
-        } else {
-            Ok(())
         }
     }
 

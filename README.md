@@ -109,6 +109,24 @@ default if a peer acknowledges our FIN but never sends its own FIN. The generic
 per-peer default remains effectively unlimited and preserves applications that
 intentionally multiplex several streams per peer.
 
+Applications may reserve part of that same table with
+`set_connection_reservation(slots, classifier)` in Rust or
+`setConnectionReservation(slots, classifier)` in TypeScript. Both the stack and
+endpoint adapter expose this API; the TypeScript adapter method is asynchronous.
+The local classifier receives the authenticated peer identity, never a priority
+claim from a TCP header. Ordinary new connections require the retained total to
+be below `max_connections - slots`; eligible peers may use the remaining slots.
+The total and per-peer limits still apply, in both connection directions.
+
+Reservations default to disabled, and zero disables an installed reservation.
+The reserved count must leave at least one ordinary slot. Changes affect new
+allocations only: existing handshakes, data, closing streams and TIME-WAIT remain
+valid. Install the reservation before traffic if capacity must be available
+immediately; it does not evict occupied slots. A classifier may consult changing
+local state but must stay cheap and synchronous. This protects against unknown
+peers filling the table, not against malicious eligible peers or carrier floods,
+and does not grant application or payment authorization.
+
 Rust `FipsTcpEndpoint::receive_report` isolates malformed and over-capacity
 segments within each bounded FIPS receive batch. Its aggregate reports counts
 only; it neither retains attacker-controlled error strings nor logs each bad

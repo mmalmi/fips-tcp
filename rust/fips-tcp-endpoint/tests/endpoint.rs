@@ -320,6 +320,60 @@ async fn full_table_error_does_not_drop_later_valid_datagram_from_the_batch() {
     endpoint.shutdown().await.expect("shutdown endpoint");
 }
 
+#[tokio::test]
+async fn reservation_rejection_is_isolated_and_classification_uses_authenticated_identity() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .unwrap(),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).unwrap();
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config {
+            max_connections: 3,
+            max_connections_per_peer: 3,
+            ..Config::default()
+        },
+        1,
+    )
+    .await
+    .unwrap();
+    tcp.set_connection_reservation(
+        1,
+        Arc::new(move |peer| {
+            assert_eq!(peer.node_addr(), local.node_addr());
+            false
+        }),
+    )
+    .unwrap();
+    send_loopback(&endpoint, local, syn(50_000)).await;
+    send_loopback(&endpoint, local, syn(50_001)).await;
+    send_loopback(&endpoint, local, syn(50_002)).await;
+    send_loopback(&endpoint, local, rst(50_003)).await;
+    let report = tcp.receive_report(0).await.unwrap();
+    assert_eq!(report.datagrams, 4);
+    assert_eq!(report.processed, 3);
+    assert_eq!(report.connection_limited, 1);
+    assert_eq!(report.rejected(), 1);
+    assert!(tcp.accept().is_none());
+    tcp.set_connection_reservation(
+        1,
+        Arc::new(move |peer| peer.node_addr() == local.node_addr()),
+    )
+    .unwrap();
+    let id = tcp.connect(local, 0).await.unwrap();
+    assert_eq!(tcp.state(id), Some(State::SynSent));
+    assert!(matches!(
+        tcp.connect(local, 0).await,
+        Err(AdapterError::Tcp(fips_tcp::StackError::ConnectionLimit))
+    ));
+    endpoint.shutdown().await.unwrap();
+}
+
 async fn send_loopback(endpoint: &FipsEndpoint, local: PeerIdentity, bytes: Vec<u8>) {
     endpoint
         .send_datagram(local, FSP_SERVICE_PORT, FSP_SERVICE_PORT, bytes)

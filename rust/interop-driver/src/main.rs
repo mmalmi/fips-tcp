@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, Write};
+use std::sync::Arc;
 
 use fips_tcp::{ConnectionId, MarkerStatus, SendMarker, Stack, State};
 use serde::Deserialize;
@@ -8,6 +9,14 @@ use serde_json::{Value, json};
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum Command {
+    Configure {
+        max_connections: usize,
+        max_connections_per_peer: usize,
+    },
+    Reserve {
+        slots: usize,
+        eligible: Vec<String>,
+    },
     Listen {
         port: u16,
     },
@@ -95,6 +104,28 @@ fn execute(
     command: Command,
 ) -> Result<Value, String> {
     match command {
+        Command::Configure {
+            max_connections,
+            max_connections_per_peer,
+        } => {
+            *stack = Stack::new(
+                fips_tcp::Config {
+                    max_connections,
+                    max_connections_per_peer,
+                    ..fips_tcp::Config::default()
+                },
+                0x55aa_1234_9988_7766,
+            );
+            markers.clear();
+            *next_marker = 1;
+            Ok(Value::Null)
+        }
+        Command::Reserve { slots, eligible } => {
+            let eligible: HashSet<_> = eligible.into_iter().collect();
+            stack
+                .set_connection_reservation(slots, Arc::new(move |peer| eligible.contains(peer)))
+                .map(|()| Value::Null)
+        }
         Command::Listen { port } => stack.listen(port).map(|()| Value::Null),
         Command::Connect {
             peer,

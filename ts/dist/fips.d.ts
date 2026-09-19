@@ -24,6 +24,8 @@ export declare class FipsTcpEndpoint {
     private operation;
     constructor(endpoint: FipsDatagramEndpoint, fspServicePort: number, config?: Partial<Config>, isnSeed?: bigint | number);
     accept(): Promise<ConnectionId | undefined>;
+    /** Local allocation priority over authenticated identities, not authorization. */
+    setConnectionReservation(slots: number, eligible: (peer: string) => boolean): Promise<void>;
     connect(peer: string, nowMs?: number): Promise<ConnectionId>;
     write(id: ConnectionId, bytes: Uint8Array, nowMs?: number): Promise<number>;
     /** Accept payload and return an opaque cumulative TCP-ACK boundary. */

@@ -10,7 +10,15 @@ export declare class Stack {
     private nextConnectionId;
     private nextEphemeralPort;
     private isnState;
+    private reservation;
     constructor(config?: Partial<Config>, isnSeed?: bigint | number);
+    /**
+     * Reserve existing capacity for locally selected peers; per-peer limits remain.
+     * Ordinary allocations require retained < maxConnections - slots. The cheap,
+     * synchronous classifier affects only new tuples, never existing streams.
+     * Zero disables; installing a reservation does not evict retained connections.
+     */
+    setConnectionReservation(slots: number, eligible: (peer: string) => boolean): void;
     listen(port: number): void;
     closeListener(port: number): void;
     accept(port: number): ConnectionId | undefined;

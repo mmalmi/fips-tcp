@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { createInterface, Interface } from "node:readline";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { ConnectionId, MarkerStatus, Segment, Stack, State } from "../src/index.js";
+import { Config, ConnectionId, FIPS_VERSION, FlagSet, Flags, MarkerStatus, Segment,
+  Stack, State, TcpOptionKind } from "../src/index.js";
 import { recoveryVectors } from "./recovery-vectors.js";
 
 interface WireOutbound {
@@ -67,10 +68,14 @@ class RustDriver {
 }
 
 class CrossPair {
-  readonly ts = new Stack({}, 0x1234_5678_9abc_def0n);
+  readonly ts: Stack;
   readonly rust = new RustDriver();
   now = 0;
   private rustOutbound: Uint8Array[] = [];
+
+  constructor(config: Partial<Config> = {}) {
+    this.ts = new Stack(config, 0x1234_5678_9abc_def0n);
+  }
 
   async rustCommand(command: Command): Promise<unknown> {
     const response = await this.rust.command(command);
@@ -133,6 +138,58 @@ afterEach(async () => {
 });
 
 describe("live Rust/TypeScript TCP/FIPS interoperability", () => {
+  test.each(["TypeScript", "Rust"])("%s establishes a reserved stream during a half-open flood", async (initiator) => {
+    const pair = new CrossPair({ maxConnections: 4, maxConnectionsPerPeer: 2 });
+    pairs.push(pair);
+    await pair.rustCommand({ op: "configure", maxConnections: 4, maxConnectionsPerPeer: 2 });
+    pair.ts.listen(443);
+    await pair.rustCommand({ op: "listen", port: 443 });
+    pair.ts.setConnectionReservation(2, (peer) => peer === "rust");
+    await pair.rustCommand({ op: "reserve", slots: 2, eligible: ["ts"] });
+    for (let n = 0; n < 2; n += 1) {
+      const peer = `attacker-${n}`;
+      const bytes = admissionSyn(51_000 + n);
+      pair.ts.input(peer, bytes, pair.now);
+      expect(pair.ts.drainOutbound()).toHaveLength(1);
+      const response = await pair.rust.command({ op: "input", peer, bytes: toHex(bytes), now: pair.now });
+      expect(response.outbound).toHaveLength(1);
+      // Retain both SYN-RECEIVED tuples by withholding their final ACKs.
+    }
+    expect(() => pair.ts.input("extra", admissionSyn(51_002), pair.now)).toThrow(/connection limit/i);
+    await expect(pair.rust.command({ op: "input", peer: "extra",
+      bytes: toHex(admissionSyn(51_002)), now: pair.now })).rejects.toThrow(/connection limit/i);
+    let tsId: number;
+    let rustId: number;
+    if (initiator === "TypeScript") {
+      tsId = pair.ts.connectFromWithIsn("rust", 50_000, 443, 1234, pair.now);
+      await pair.settle();
+      rustId = Number(await pair.rustCommand({ op: "accept", port: 443 }));
+    } else {
+      rustId = Number(await pair.rustCommand({ op: "connect", peer: "ts",
+        localPort: 50_000, remotePort: 443, isn: 1234, now: pair.now }));
+      await pair.settle();
+      tsId = pair.ts.accept(443)!;
+    }
+    expect(pair.ts.state(tsId)).toBe(State.Established);
+    expect(await pair.rustCommand({ op: "state", id: rustId })).toBe("established");
+    // Withdrawal prevents new reserved allocations without aborting this stream.
+    pair.ts.setConnectionReservation(2, () => false);
+    await pair.rustCommand({ op: "reserve", slots: 2, eligible: [] });
+    const payload = new TextEncoder().encode("payment-sized application record");
+    expect(pair.ts.write(tsId, payload, pair.now)).toBe(payload.length);
+    expect(await pair.rustCommand({ op: "write", id: rustId, bytes: toHex(payload), now: pair.now })).toBe(payload.length);
+    await pair.settle();
+    expect(pair.ts.read(tsId, payload.length, pair.now)).toEqual(payload);
+    expect(fromHex(String(await pair.rustCommand({ op: "read", id: rustId,
+      max: payload.length, now: pair.now })))).toEqual(payload);
+    pair.ts.close(tsId, pair.now);
+    await pair.settle();
+    await pair.rustCommand({ op: "close", id: rustId, now: pair.now });
+    await pair.settle();
+    expect(pair.ts.state(tsId)).toBe(State.TimeWait);
+    expect(await pair.rustCommand({ op: "state", id: rustId })).toBeNull();
+  }, 30_000);
+
   test.each(["TypeScript", "Rust"])("%s initiates a bidirectional shared outage recovery vector", async (initiator) => {
     for (const vector of recoveryVectors) {
       const pair = new CrossPair();
@@ -322,3 +379,9 @@ describe("live Rust/TypeScript TCP/FIPS interoperability", () => {
     ).toEqual(toRust);
   }, 30_000);
 });
+
+function admissionSyn(port: number): Uint8Array {
+  return new Segment({ srcPort: port, dstPort: 443, seq: port, flags: new FlagSet(Flags.Syn),
+    options: [{ kind: TcpOptionKind.FipsVersion, version: FIPS_VERSION, reserved: 0 }],
+  }).encode();
+}

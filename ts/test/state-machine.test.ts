@@ -5,6 +5,32 @@ import { FlagSet, Flags, Segment, Stack, State } from "../src/index.js";
 import { Pair } from "./pair.js";
 
 describe("TCP/FIPS TypeScript state machine", () => {
+  test("reservation changes preserve existing streams and TIME-WAIT limits", () => {
+    const pair = new Pair({ maxConnections: 2, maxConnectionsPerPeer: 1, timeWaitMs: 50 });
+    let eligible = true;
+    for (const stack of [pair.a, pair.b]) stack.setConnectionReservation(1, () => eligible);
+    const [client, server] = pair.connect();
+    pair.b.connect("half-open", 443, pair.now);
+    pair.b.drainOutbound();
+    eligible = false;
+    expect(() => pair.b.connect("new-peer", 443, pair.now)).toThrow(/connection limit/i);
+    expect(pair.a.write(client, new TextEncoder().encode("request"), pair.now)).toBe(7);
+    expect(pair.b.write(server, new TextEncoder().encode("reply"), pair.now)).toBe(5);
+    pair.settle();
+    expect(new TextDecoder().decode(pair.b.read(server, 16, pair.now))).toBe("request");
+    expect(new TextDecoder().decode(pair.a.read(client, 16, pair.now))).toBe("reply");
+    pair.a.close(client, pair.now);
+    pair.settle();
+    pair.b.close(server, pair.now);
+    pair.settle();
+    expect(pair.a.state(client)).toBe(State.TimeWait);
+    expect(() => pair.a.connect("new-peer", 443, pair.now)).toThrow(/connection limit/i);
+    pair.advance(50);
+    pair.settle();
+    expect(pair.a.state(client)).toBeUndefined();
+    expect(() => pair.a.connect("new-peer", 443, pair.now)).not.toThrow();
+  });
+
   test("handshake, bidirectional stream, and orderly close", () => {
     const pair = new Pair();
     const [client, server] = pair.connect();

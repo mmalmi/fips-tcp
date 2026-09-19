@@ -20,6 +20,10 @@ export class FipsTcpEndpoint {
     async accept() {
         return this.enqueue(() => this.stack.accept(this.fspServicePort));
     }
+    /** Local allocation priority over authenticated identities, not authorization. */
+    async setConnectionReservation(slots, eligible) {
+        return this.enqueue(() => this.stack.setConnectionReservation(slots, eligible));
+    }
     async connect(peer, nowMs = Date.now()) {
         return this.enqueue(async () => {
             const id = this.stack.connect(peer, this.fspServicePort, nowMs);

@@ -105,6 +105,21 @@ impl FipsTcpEndpoint {
         self.stack.accept(self.fsp_service_port)
     }
 
+    /// Reserve existing table capacity using authenticated FIPS identities.
+    /// This is only allocation priority; application authorization remains above
+    /// TCP. Existing streams are unchanged, and zero disables the reservation.
+    pub fn set_connection_reservation(
+        &mut self,
+        slots: usize,
+        eligible: Arc<dyn Fn(&PeerIdentity) -> bool + Send + Sync>,
+    ) -> Result<(), AdapterError> {
+        self.stack.set_connection_reservation(
+            slots,
+            Arc::new(move |npub| PeerIdentity::from_npub(npub).is_ok_and(|peer| eligible(&peer))),
+        )?;
+        Ok(())
+    }
+
     pub async fn connect(
         &mut self,
         peer: PeerIdentity,
