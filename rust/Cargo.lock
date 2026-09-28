@@ -397,6 +397,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "convert_case"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -565,6 +571,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10d60334b3b2e7c9d91ef8150abfb6fa4c1c39ebbcf4a81c2e346aad939fee3e"
 dependencies = [
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "derive_more"
+version = "0.99.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6edb4b64a43d977b8e99788fe3a04d483834fba1215a7e02caa415b626497f7f"
+dependencies = [
+ "convert_case",
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -1307,6 +1326,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "netlink-packet-netfilter"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27b511a24610c054dbbfea4c3e403fe4df2e811df6bc48fa2583b1b93333f020"
+dependencies = [
+ "bitflags 2.13.0",
+ "derive_more",
+ "libc",
+ "netlink-packet-core",
+ "zerocopy",
+]
+
+[[package]]
 name = "netlink-packet-route"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1491,9 +1523,9 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-core"
-version = "0.4.82"
+version = "0.4.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c63b7f605b3566cd01b748c6aaef8a3427d8751266d1e411ab28b06a7233823"
+checksum = "6c073fb7b277e60bcbdeac60c05e3cb7c39df7ab2144af4de5f0f7b332d16b0c"
 dependencies = [
  "base64",
  "bluer",
@@ -1503,6 +1535,9 @@ dependencies = [
  "hkdf",
  "libc",
  "mdns-sd",
+ "netlink-packet-core",
+ "netlink-packet-netfilter",
+ "netlink-sys",
  "nostr",
  "nostr-sdk",
  "nvpn-fips-identity",
@@ -1512,6 +1547,7 @@ dependencies = [
  "ring",
  "rtnetlink",
  "rustables",
+ "rustls",
  "secp256k1 0.30.0",
  "serde",
  "serde_json",
@@ -1556,7 +1592,7 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-tcp-endpoint"
-version = "0.2.17"
+version = "0.2.18"
 dependencies = [
  "nvpn-fips-core",
  "nvpn-fips-tcp",
@@ -1957,6 +1993,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
+name = "rustc_version"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
+dependencies = [
+ "semver",
+]
+
+[[package]]
 name = "rustix"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2072,6 +2117,12 @@ checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
 dependencies = [
  "cc",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "serde"
