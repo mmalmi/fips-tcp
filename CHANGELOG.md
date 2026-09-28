@@ -1,5 +1,11 @@
 # Changelog
 
+## Endpoint 0.2.18 - 2026-09-28
+
+- Require FIPS core 0.4.83 for connection lifecycle, discovery, and identity
+  recovery improvements. TCP/FIPS wire bytes and the published 0.2.2 state
+  machine remain unchanged.
+
 ## Endpoint 0.2.17 - 2026-09-15
 
 - Require FIPS core 0.4.82 for recovery of unanswered sparse traffic and
