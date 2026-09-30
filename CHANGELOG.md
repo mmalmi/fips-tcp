@@ -1,5 +1,10 @@
 # Changelog
 
+## Endpoint 0.2.21 - 2026-09-30
+
+- Require FIPS core 0.4.88 to maintain pending Bloom deadlines incrementally.
+  TCP/FIPS wire bytes and the published 0.2.2 state machine remain unchanged.
+
 ## Endpoint 0.2.20 - 2026-09-30
 
 - Require FIPS core 0.4.87 to share Bloom-filter aggregation across peers.
