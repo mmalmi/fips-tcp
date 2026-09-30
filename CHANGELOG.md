@@ -1,5 +1,10 @@
 # Changelog
 
+## Endpoint 0.2.20 - 2026-09-30
+
+- Require FIPS core 0.4.87 to share Bloom-filter aggregation across peers.
+  TCP/FIPS wire bytes and the published 0.2.2 state machine remain unchanged.
+
 ## Endpoint 0.2.19 - 2026-09-30
 
 - Require FIPS core 0.4.86 for linear peer snapshots and routing recovery under
