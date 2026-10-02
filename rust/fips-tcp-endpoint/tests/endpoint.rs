@@ -320,6 +320,121 @@ async fn full_table_error_does_not_drop_later_valid_datagram_from_the_batch() {
     endpoint.shutdown().await.expect("shutdown endpoint");
 }
 
+#[tokio::test]
+async fn rejected_peer_cannot_emit_syn_ack_or_consume_connection_capacity() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .expect("bind embedded endpoint"),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).expect("parse local identity");
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config {
+            max_connections: 2,
+            max_connections_per_peer: 2,
+            ..Config::default()
+        },
+        0x1234_5678,
+    )
+    .await
+    .expect("bind TCP service");
+    send_loopback(&endpoint, local, syn(50_000)).await;
+
+    let mut checked = Vec::new();
+    let report = tcp
+        .receive_report_filtered(0, |peer| {
+            checked.push(peer.npub());
+            false
+        })
+        .await
+        .expect("reject unadmitted peer");
+    assert_eq!(checked, vec![local.npub()]);
+    assert_eq!(report.datagrams, 1);
+    assert_eq!(report.processed, 0);
+    assert_eq!(report.connection_limited, 1);
+    assert_eq!(report.rejected(), 1);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), tcp.receive_report(0))
+            .await
+            .is_err(),
+        "rejected SYN must not emit a loopback SYN-ACK"
+    );
+
+    // Admitting this identity now must leave room for both stream halves.
+    let client = tcp.connect(local, 0).await.expect("connect admitted peer");
+    for _ in 0..3 {
+        let report = tokio::time::timeout(
+            Duration::from_secs(2),
+            tcp.receive_report_filtered(0, |peer| peer.npub() == local.npub()),
+        )
+        .await
+        .expect("admitted handshake datagram timed out")
+        .expect("receive admitted handshake datagram");
+        assert_eq!(report.rejected(), 0);
+    }
+    let server = tcp.accept().expect("accept admitted peer");
+    assert_eq!(tcp.state(client), Some(State::Established));
+    assert_eq!(tcp.state(server), Some(State::Established));
+
+    endpoint.shutdown().await.expect("shutdown endpoint");
+}
+
+#[tokio::test]
+async fn filtered_receive_preserves_batch_bound_and_isolates_rejected_and_malformed_datagrams() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .expect("bind embedded endpoint"),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).expect("parse local identity");
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config::default(),
+        0x1234_5678,
+    )
+    .await
+    .expect("bind TCP service");
+    send_loopback(&endpoint, local, syn(50_000)).await;
+    send_loopback(&endpoint, local, vec![1, 2, 3]).await;
+    for _ in 0..64 {
+        send_loopback(&endpoint, local, rst(50_001)).await;
+    }
+
+    let mut checked = 0;
+    let report = tcp
+        .receive_report_filtered(0, |peer| {
+            assert_eq!(peer.npub(), local.npub());
+            checked += 1;
+            checked > 1
+        })
+        .await
+        .expect("receive mixed filtered batch");
+    assert_eq!(checked, 64);
+    assert_eq!(report.datagrams, 64);
+    assert_eq!(report.processed, 62);
+    assert_eq!(report.malformed, 1);
+    assert_eq!(report.connection_limited, 1);
+    assert_eq!(report.other_errors, 0);
+    assert_eq!(report.rejected(), 2);
+
+    let remainder = tcp
+        .receive_report(0)
+        .await
+        .expect("receive remaining batch");
+    assert_eq!(remainder.datagrams, 2);
+    assert_eq!(remainder.processed, 2);
+    assert_eq!(remainder.rejected(), 0);
+
+    endpoint.shutdown().await.expect("shutdown endpoint");
+}
+
 async fn send_loopback(endpoint: &FipsEndpoint, local: PeerIdentity, bytes: Vec<u8>) {
     endpoint
         .send_datagram(local, FSP_SERVICE_PORT, FSP_SERVICE_PORT, bytes)
