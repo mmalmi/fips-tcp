@@ -11,8 +11,8 @@ repository.workspace = true
 name = "fips_tcp_endpoint"
 
 [dependencies]
-fips-core = { package = "nvpn-fips-core", version = "=0.4.90" }
-fips-tcp = { package = "nvpn-fips-tcp", version = "0.2.2", path = "../fips-tcp" }
+nvpn-fips-core = { version = "=0.4.90" }
+nvpn-fips-tcp = { version = "0.2.2", path = "../fips-tcp" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "time"] }
