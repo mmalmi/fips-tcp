@@ -1,5 +1,13 @@
 # Changelog
 
+## Endpoint 0.2.23 - 2026-10-02
+
+- Allow applications to reject authenticated peers before incoming datagrams
+  allocate TCP state, while preserving bounded batch processing.
+- Require FIPS core 0.4.90 for handshake reply windows, admitted lookup route
+  retention, and persistent identity error handling. TCP/FIPS wire bytes and
+  the published 0.2.2 state machine are unchanged.
+
 ## Endpoint 0.2.22 - 2026-10-01
 
 - Require FIPS core 0.4.89. TCP/FIPS wire bytes and the published 0.2.2
