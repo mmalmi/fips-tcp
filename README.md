@@ -73,9 +73,9 @@ loop:
 
 ```toml
 [dependencies]
-nvpn-fips-core = { version = "=0.4.90" }
+nvpn-fips-core = { version = "=0.4.91" }
 nvpn-fips-tcp = { version = "0.2.2" }
-fips-tcp-endpoint = { package = "nvpn-fips-tcp-endpoint", version = "0.2.23" }
+fips-tcp-endpoint = { package = "nvpn-fips-tcp-endpoint", version = "0.2.24" }
 ```
 
 The dependency aliases preserve the existing Rust import names:
