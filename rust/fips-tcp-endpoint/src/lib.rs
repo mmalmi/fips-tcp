@@ -202,6 +202,20 @@ impl FipsTcpEndpoint {
         now_ms: u64,
         mut admitted: impl FnMut(&PeerIdentity) -> bool,
     ) -> Result<ReceiveReport, AdapterError> {
+        self.receive_report_filtered_datagrams(now_ms, |peer, _| admitted(peer))
+            .await
+    }
+
+    /// Inspect authenticated carrier identities and TCP bytes before admission.
+    ///
+    /// Like `receive_report_filtered`, rejection cannot allocate TCP state or
+    /// emit a response. Bytes are untrusted and must be decoded before using
+    /// fields to admit a new service client. The batch remains bounded to 64.
+    pub async fn receive_report_filtered_datagrams(
+        &mut self,
+        now_ms: u64,
+        mut admitted: impl FnMut(&PeerIdentity, &[u8]) -> bool,
+    ) -> Result<ReceiveReport, AdapterError> {
         let count = self
             .receiver
             .recv_batch_into(&mut self.receive_batch, 64)
@@ -213,7 +227,7 @@ impl FipsTcpEndpoint {
         };
         for datagram in self.receive_batch.drain(..) {
             debug_assert_eq!(datagram.destination_port, self.fsp_service_port);
-            if !admitted(&datagram.source_peer) {
+            if !admitted(&datagram.source_peer, datagram.data.as_slice()) {
                 report.connection_limited += 1;
                 continue;
             }

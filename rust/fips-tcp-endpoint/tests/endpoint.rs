@@ -499,3 +499,37 @@ async fn wait_for_capability_removal(endpoint: &FipsEndpoint) {
     .await
     .expect("capability was not withdrawn");
 }
+
+#[tokio::test]
+async fn datagram_filter_sees_authenticated_bytes_before_tcp_admission() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .unwrap(),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).unwrap();
+    let mut tcp = FipsTcpEndpoint::bind(endpoint.clone(), FSP_SERVICE_PORT, Config::default(), 7)
+        .await
+        .unwrap();
+    let rejected = syn(50_000);
+    let admitted = syn(50_001);
+    send_loopback(&endpoint, local, rejected.clone()).await;
+    send_loopback(&endpoint, local, vec![1, 2, 3]).await;
+    send_loopback(&endpoint, local, admitted.clone()).await;
+    let mut seen = Vec::new();
+    let report = tcp
+        .receive_report_filtered_datagrams(0, |peer, bytes| {
+            assert_eq!(peer.npub(), local.npub());
+            seen.push(bytes.to_vec());
+            bytes == admitted
+        })
+        .await
+        .unwrap();
+    assert_eq!(seen, vec![rejected, vec![1, 2, 3], admitted]);
+    assert_eq!(report.processed, 1);
+    assert_eq!(report.connection_limited, 2);
+    assert_eq!(report.malformed, 0, "filtered bytes must never enter TCP");
+    endpoint.shutdown().await.unwrap();
+}
