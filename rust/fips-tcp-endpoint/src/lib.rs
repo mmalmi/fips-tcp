@@ -22,7 +22,7 @@ pub struct ReceiveReport {
     pub processed: usize,
     /// Datagrams rejected by bounded TCP wire decoding.
     pub malformed: usize,
-    /// Valid new tuples rejected by global or authenticated-peer admission.
+    /// Datagrams rejected by connection limits or authenticated-peer admission.
     pub connection_limited: usize,
     /// Other isolated TCP state-machine errors.
     pub other_errors: usize,
@@ -204,6 +204,33 @@ impl FipsTcpEndpoint {
 
     /// Feed one complete bounded FIPS batch into TCP and report isolated errors.
     pub async fn receive_report(&mut self, now_ms: u64) -> Result<ReceiveReport, AdapterError> {
+        self.receive_report_filtered(now_ms, |_| true).await
+    }
+
+    /// Feed one bounded FIPS batch into TCP after checking each authenticated peer.
+    ///
+    /// Rejected datagrams never enter TCP, allocate connection state, or cause
+    /// responses. They count toward [`ReceiveReport::connection_limited`]. The
+    /// predicate applies to every datagram, including existing connections.
+    pub async fn receive_report_filtered(
+        &mut self,
+        now_ms: u64,
+        mut admitted: impl FnMut(&PeerIdentity) -> bool,
+    ) -> Result<ReceiveReport, AdapterError> {
+        self.receive_report_filtered_datagrams(now_ms, |peer, _| admitted(peer))
+            .await
+    }
+
+    /// Inspect authenticated carrier identities and TCP bytes before admission.
+    ///
+    /// Like `receive_report_filtered`, rejection cannot allocate TCP state or
+    /// emit a response. Bytes are untrusted and must be decoded before using
+    /// fields to admit a new service client. The batch remains bounded to 64.
+    pub async fn receive_report_filtered_datagrams(
+        &mut self,
+        now_ms: u64,
+        mut admitted: impl FnMut(&PeerIdentity, &[u8]) -> bool,
+    ) -> Result<ReceiveReport, AdapterError> {
         let count = self
             .receiver
             .recv_batch_into(&mut self.receive_batch, 64)
@@ -215,6 +242,10 @@ impl FipsTcpEndpoint {
         };
         for datagram in self.receive_batch.drain(..) {
             debug_assert_eq!(datagram.destination_port, self.fsp_service_port);
+            if !admitted(&datagram.source_peer, datagram.data.as_slice()) {
+                report.connection_limited += 1;
+                continue;
+            }
             match self.stack.input(
                 datagram.source_peer.npub(),
                 datagram.data.as_slice(),

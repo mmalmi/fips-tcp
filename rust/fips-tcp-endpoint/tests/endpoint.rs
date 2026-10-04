@@ -321,57 +321,118 @@ async fn full_table_error_does_not_drop_later_valid_datagram_from_the_batch() {
 }
 
 #[tokio::test]
-async fn reservation_rejection_is_isolated_and_classification_uses_authenticated_identity() {
+async fn rejected_peer_cannot_emit_syn_ack_or_consume_connection_capacity() {
     let endpoint = Arc::new(
         FipsEndpoint::builder()
             .without_system_tun()
             .bind()
             .await
-            .unwrap(),
+            .expect("bind embedded endpoint"),
     );
-    let local = PeerIdentity::from_npub(endpoint.npub()).unwrap();
+    let local = PeerIdentity::from_npub(endpoint.npub()).expect("parse local identity");
     let mut tcp = FipsTcpEndpoint::bind(
         endpoint.clone(),
         FSP_SERVICE_PORT,
         Config {
-            max_connections: 3,
-            max_connections_per_peer: 3,
+            max_connections: 2,
+            max_connections_per_peer: 2,
             ..Config::default()
         },
-        1,
+        0x1234_5678,
     )
     .await
-    .unwrap();
-    tcp.set_connection_reservation(
-        1,
-        Arc::new(move |peer| {
-            assert_eq!(peer.node_addr(), local.node_addr());
-            false
-        }),
-    )
-    .unwrap();
+    .expect("bind TCP service");
     send_loopback(&endpoint, local, syn(50_000)).await;
-    send_loopback(&endpoint, local, syn(50_001)).await;
-    send_loopback(&endpoint, local, syn(50_002)).await;
-    send_loopback(&endpoint, local, rst(50_003)).await;
-    let report = tcp.receive_report(0).await.unwrap();
-    assert_eq!(report.datagrams, 4);
-    assert_eq!(report.processed, 3);
+
+    let mut checked = Vec::new();
+    let report = tcp
+        .receive_report_filtered(0, |peer| {
+            checked.push(peer.npub());
+            false
+        })
+        .await
+        .expect("reject unadmitted peer");
+    assert_eq!(checked, vec![local.npub()]);
+    assert_eq!(report.datagrams, 1);
+    assert_eq!(report.processed, 0);
     assert_eq!(report.connection_limited, 1);
     assert_eq!(report.rejected(), 1);
-    assert!(tcp.accept().is_none());
-    tcp.set_connection_reservation(
-        1,
-        Arc::new(move |peer| peer.node_addr() == local.node_addr()),
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), tcp.receive_report(0))
+            .await
+            .is_err(),
+        "rejected SYN must not emit a loopback SYN-ACK"
+    );
+
+    // Admitting this identity now must leave room for both stream halves.
+    let client = tcp.connect(local, 0).await.expect("connect admitted peer");
+    for _ in 0..3 {
+        let report = tokio::time::timeout(
+            Duration::from_secs(2),
+            tcp.receive_report_filtered(0, |peer| peer.npub() == local.npub()),
+        )
+        .await
+        .expect("admitted handshake datagram timed out")
+        .expect("receive admitted handshake datagram");
+        assert_eq!(report.rejected(), 0);
+    }
+    let server = tcp.accept().expect("accept admitted peer");
+    assert_eq!(tcp.state(client), Some(State::Established));
+    assert_eq!(tcp.state(server), Some(State::Established));
+
+    endpoint.shutdown().await.expect("shutdown endpoint");
+}
+
+#[tokio::test]
+async fn filtered_receive_preserves_batch_bound_and_isolates_rejected_and_malformed_datagrams() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .expect("bind embedded endpoint"),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).expect("parse local identity");
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config::default(),
+        0x1234_5678,
     )
-    .unwrap();
-    let id = tcp.connect(local, 0).await.unwrap();
-    assert_eq!(tcp.state(id), Some(State::SynSent));
-    assert!(matches!(
-        tcp.connect(local, 0).await,
-        Err(AdapterError::Tcp(fips_tcp::StackError::ConnectionLimit))
-    ));
-    endpoint.shutdown().await.unwrap();
+    .await
+    .expect("bind TCP service");
+    send_loopback(&endpoint, local, syn(50_000)).await;
+    send_loopback(&endpoint, local, vec![1, 2, 3]).await;
+    for _ in 0..64 {
+        send_loopback(&endpoint, local, rst(50_001)).await;
+    }
+
+    let mut checked = 0;
+    let report = tcp
+        .receive_report_filtered(0, |peer| {
+            assert_eq!(peer.npub(), local.npub());
+            checked += 1;
+            checked > 1
+        })
+        .await
+        .expect("receive mixed filtered batch");
+    assert_eq!(checked, 64);
+    assert_eq!(report.datagrams, 64);
+    assert_eq!(report.processed, 62);
+    assert_eq!(report.malformed, 1);
+    assert_eq!(report.connection_limited, 1);
+    assert_eq!(report.other_errors, 0);
+    assert_eq!(report.rejected(), 2);
+
+    let remainder = tcp
+        .receive_report(0)
+        .await
+        .expect("receive remaining batch");
+    assert_eq!(remainder.datagrams, 2);
+    assert_eq!(remainder.processed, 2);
+    assert_eq!(remainder.rejected(), 0);
+
+    endpoint.shutdown().await.expect("shutdown endpoint");
 }
 
 async fn send_loopback(endpoint: &FipsEndpoint, local: PeerIdentity, bytes: Vec<u8>) {
@@ -437,4 +498,92 @@ async fn wait_for_capability_removal(endpoint: &FipsEndpoint) {
     })
     .await
     .expect("capability was not withdrawn");
+}
+
+#[tokio::test]
+async fn datagram_filter_sees_authenticated_bytes_before_tcp_admission() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .unwrap(),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).unwrap();
+    let mut tcp = FipsTcpEndpoint::bind(endpoint.clone(), FSP_SERVICE_PORT, Config::default(), 7)
+        .await
+        .unwrap();
+    let rejected = syn(50_000);
+    let admitted = syn(50_001);
+    send_loopback(&endpoint, local, rejected.clone()).await;
+    send_loopback(&endpoint, local, vec![1, 2, 3]).await;
+    send_loopback(&endpoint, local, admitted.clone()).await;
+    let mut seen = Vec::new();
+    let report = tcp
+        .receive_report_filtered_datagrams(0, |peer, bytes| {
+            assert_eq!(peer.npub(), local.npub());
+            seen.push(bytes.to_vec());
+            bytes == admitted
+        })
+        .await
+        .unwrap();
+    assert_eq!(seen, vec![rejected, vec![1, 2, 3], admitted]);
+    assert_eq!(report.processed, 1);
+    assert_eq!(report.connection_limited, 2);
+    assert_eq!(report.malformed, 0, "filtered bytes must never enter TCP");
+    endpoint.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn reservation_rejection_is_isolated_and_classification_uses_authenticated_identity() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .unwrap(),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).unwrap();
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config {
+            max_connections: 3,
+            max_connections_per_peer: 3,
+            ..Config::default()
+        },
+        1,
+    )
+    .await
+    .unwrap();
+    tcp.set_connection_reservation(
+        1,
+        Arc::new(move |peer| {
+            assert_eq!(peer.node_addr(), local.node_addr());
+            false
+        }),
+    )
+    .unwrap();
+    send_loopback(&endpoint, local, syn(50_000)).await;
+    send_loopback(&endpoint, local, syn(50_001)).await;
+    send_loopback(&endpoint, local, syn(50_002)).await;
+    send_loopback(&endpoint, local, rst(50_003)).await;
+    let report = tcp.receive_report(0).await.unwrap();
+    assert_eq!(report.datagrams, 4);
+    assert_eq!(report.processed, 3);
+    assert_eq!(report.connection_limited, 1);
+    assert_eq!(report.rejected(), 1);
+    assert!(tcp.accept().is_none());
+    tcp.set_connection_reservation(
+        1,
+        Arc::new(move |peer| peer.node_addr() == local.node_addr()),
+    )
+    .unwrap();
+    let id = tcp.connect(local, 0).await.unwrap();
+    assert_eq!(tcp.state(id), Some(State::SynSent));
+    assert!(matches!(
+        tcp.connect(local, 0).await,
+        Err(AdapterError::Tcp(fips_tcp::StackError::ConnectionLimit))
+    ));
+    endpoint.shutdown().await.unwrap();
 }
