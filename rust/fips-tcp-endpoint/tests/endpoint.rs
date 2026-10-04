@@ -535,6 +535,51 @@ async fn datagram_filter_sees_authenticated_bytes_before_tcp_admission() {
 }
 
 #[tokio::test]
+async fn abort_peer_reclaims_accepted_and_hidden_half_open_streams() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .unwrap(),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).unwrap();
+    let mut tcp = FipsTcpEndpoint::bind(
+        endpoint.clone(),
+        FSP_SERVICE_PORT,
+        Config {
+            max_connections: 3,
+            max_connections_per_peer: 3,
+            ..Config::default()
+        },
+        7,
+    )
+    .await
+    .unwrap();
+    let client = tcp.connect(local, 0).await.unwrap();
+    for _ in 0..3 {
+        tokio::time::timeout(Duration::from_secs(2), tcp.receive(0))
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    let server = tcp.accept().unwrap();
+    send_loopback(&endpoint, local, syn(50000)).await;
+    tokio::time::timeout(Duration::from_secs(2), tcp.receive(0))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(tcp.accept().is_none());
+    assert_eq!(tcp.abort_peer(local).await.unwrap(), 3);
+    assert_eq!(tcp.state(client), None);
+    assert_eq!(tcp.state(server), None);
+    assert!(tcp.accept().is_none());
+    assert_eq!(tcp.abort_peer(local).await.unwrap(), 0);
+    assert!(tcp.connect(local, 0).await.is_ok());
+    endpoint.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn reservation_rejection_is_isolated_and_classification_uses_authenticated_identity() {
     let endpoint = Arc::new(
         FipsEndpoint::builder()

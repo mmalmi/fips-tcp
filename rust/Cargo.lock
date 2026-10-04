@@ -1584,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-tcp"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -1592,7 +1592,7 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-tcp-endpoint"
-version = "0.2.27"
+version = "0.2.28"
 dependencies = [
  "nvpn-fips-core",
  "nvpn-fips-tcp",

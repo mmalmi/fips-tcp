@@ -189,6 +189,13 @@ impl FipsTcpEndpoint {
         self.flush().await
     }
 
+    /// Reclaim all streams for an authenticated peer, including half-open SYNs.
+    pub async fn abort_peer(&mut self, peer: PeerIdentity) -> Result<usize, AdapterError> {
+        let count = self.stack.abort_peer(&peer.npub())?;
+        self.flush().await?;
+        Ok(count)
+    }
+
     pub async fn poll(&mut self, now_ms: u64) -> Result<(), AdapterError> {
         self.stack.poll(now_ms);
         self.flush().await

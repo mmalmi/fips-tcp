@@ -1,5 +1,16 @@
 # Changelog
 
+## nvpn-fips-tcp 0.2.3 / nvpn-fips-tcp-endpoint 0.2.28 - 2026-10-04
+
+- Add peer-wide abort helpers that reuse existing stream reset behavior and
+  reclaim half-open connections before an application reuses an admission slot.
+- Preserve the TCP/FIPS wire format and ordinary stream behavior.
+
+## nvpn-fips-tcp-endpoint 0.2.27 - 2026-10-04
+
+- Expose authenticated peer identity and untrusted datagram bytes to admission
+  filters before TCP state allocation. Keep the original identity-only API.
+
 ## Endpoint 0.2.23 - 2026-10-02
 
 - Allow applications to reject authenticated peers before incoming datagrams
