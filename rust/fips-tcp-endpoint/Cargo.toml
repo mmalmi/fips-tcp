@@ -1,6 +1,6 @@
 [package]
 name = "nvpn-fips-tcp-endpoint"
-version = "0.2.27"
+version = "0.2.28"
 description = "FIPS endpoint adapter for TCP/FIPS streams"
 edition.workspace = true
 license.workspace = true
@@ -12,7 +12,7 @@ name = "fips_tcp_endpoint"
 
 [dependencies]
 nvpn-fips-core = { version = "=0.4.93" }
-nvpn-fips-tcp = { version = "0.2.2", path = "../fips-tcp" }
+nvpn-fips-tcp = { version = "0.2.3", path = "../fips-tcp" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "time"] }
