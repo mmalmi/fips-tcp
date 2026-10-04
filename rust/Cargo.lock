@@ -1523,9 +1523,9 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-core"
-version = "0.4.93"
+version = "0.4.94"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a86150b0407611072b88694884d6c808a5153a0a38a57633edd4946dc1face9"
+checksum = "6687a0d516c6090a6590ec973ebef9dcec2c395f11f41a96119f973dfc60b8bb"
 dependencies = [
  "base64",
  "bluer",
@@ -1592,7 +1592,7 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-tcp-endpoint"
-version = "0.2.28"
+version = "0.2.29"
 dependencies = [
  "nvpn-fips-core",
  "nvpn-fips-tcp",

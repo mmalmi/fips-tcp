@@ -1,5 +1,11 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.29 - 2026-10-04
+
+- Require FIPS core 0.4.94 so concurrent discovery requests from distinct
+  origins are admitted independently within the existing ingress bounds.
+- Preserve TCP/FIPS wire bytes and the 0.2.3 stream state machine.
+
 ## nvpn-fips-tcp 0.2.3 / nvpn-fips-tcp-endpoint 0.2.28 - 2026-10-04
 
 - Add peer-wide abort helpers that reuse existing stream reset behavior and
