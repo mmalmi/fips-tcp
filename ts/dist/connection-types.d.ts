@@ -4,7 +4,6 @@ export interface TrackedSegment {
     flags: FlagSet;
     payload: Uint8Array;
     sentAtMs: number;
-    retransmitted: boolean;
     transmissions: number;
 }
 export interface ReassemblySegment {

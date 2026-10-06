@@ -1,0 +1,60 @@
+[
+  {
+    "name": "ack-at-initial-sequence",
+    "isn": 100,
+    "ack": 100,
+    "resetSeq": 100
+  },
+  {
+    "name": "ack-before-initial-sequence",
+    "isn": 100,
+    "ack": 99,
+    "resetSeq": 99
+  },
+  {
+    "name": "ack-beyond-syn",
+    "isn": 100,
+    "ack": 102,
+    "resetSeq": 102
+  },
+  {
+    "name": "acceptable-ack-only",
+    "isn": 100,
+    "ack": 101,
+    "resetSeq": null
+  },
+  {
+    "name": "unacceptable-rst-is-silent",
+    "isn": 100,
+    "ack": 102,
+    "rst": true,
+    "resetSeq": null
+  },
+  {
+    "name": "acceptable-rst-closes",
+    "isn": 100,
+    "ack": 101,
+    "rst": true,
+    "resetSeq": null,
+    "closed": true
+  },
+  {
+    "name": "wrap-acceptable-ack",
+    "isn": 4294967295,
+    "ack": 0,
+    "resetSeq": null
+  },
+  {
+    "name": "wrap-ack-beyond-syn",
+    "isn": 4294967295,
+    "ack": 1,
+    "resetSeq": 1
+  },
+  {
+    "name": "stale-syn-ack",
+    "isn": 100,
+    "ack": 100,
+    "syn": true,
+    "resetSeq": 100
+  }
+]

@@ -1,6 +1,6 @@
 import { Reno } from "./reno.js";
 import { RttEstimator } from "./rtt.js";
-import { buildSegment } from "./segment.js";
+import { buildSegment, resetResponse } from "./segment.js";
 import { after, before, beforeOrEqual, distance, inClosedInterval, u32 } from "./seq.js";
 import { State } from "./types.js";
 import { FIPS_VERSION, FlagSet, Flags } from "./wire.js";
@@ -58,6 +58,21 @@ export class Connection {
             connection,
             [connection.sendTracked(new FlagSet(Flags.Syn | Flags.Ack), new Uint8Array(), nowMs)],
         ];
+    }
+    handshakeResponse(segment) {
+        if (segment.flags.has(Flags.Rst))
+            return undefined;
+        if (this.state === State.SynSent) {
+            if (segment.ack !== undefined &&
+                (!after(segment.ack, this.sendUna) || after(segment.ack, this.sendNxt))) {
+                return resetResponse(segment);
+            }
+        }
+        else if (segment.flags.has(Flags.Syn) &&
+            (this.state !== State.SynReceived || u32(segment.seq + 1) !== this.recvNxt)) {
+            return this.ackSegment();
+        }
+        return undefined;
     }
     onSegment(segment, nowMs, config) {
         if (segment.flags.has(Flags.Rst)) {
@@ -227,7 +242,7 @@ export class Connection {
             const tracked = this.unacked.shift();
             ackedPayload += tracked.payload.length;
             finAcked ||= tracked.flags.has(Flags.Fin);
-            if (!tracked.retransmitted)
+            if (this.rtt.canSample(trackedEnd(tracked)))
                 rttSample = Math.max(0, nowMs - tracked.sentAtMs);
         }
         const first = this.unacked[0];
@@ -342,7 +357,6 @@ export class Connection {
             flags,
             payload: payload.slice(),
             sentAtMs: nowMs,
-            retransmitted: false,
             transmissions: 1,
         };
         this.sendNxt = trackedEnd(tracked);
@@ -354,8 +368,8 @@ export class Connection {
         const tracked = this.unacked[0];
         if (tracked === undefined)
             return undefined;
+        this.rtt.onRetransmit(this.sendNxt);
         tracked.sentAtMs = nowMs;
-        tracked.retransmitted = true;
         tracked.transmissions = Math.min(0xff, tracked.transmissions + 1);
         if (timeout)
             this.duplicateAcks = 0;
@@ -394,7 +408,8 @@ export class Connection {
     zeroWindowProbe(nowMs) {
         const unacked = this.unacked.find((segment) => segment.payload.length > 0);
         if (unacked !== undefined) {
-            return buildSegment(this.localPort, this.remotePort, unacked.seq, this.recvNxt, this.availableWindowU16(), this.mss, new FlagSet(Flags.Ack | Flags.Psh), unacked.payload.slice(0, 1));
+            this.rtt.onRetransmit(this.sendNxt);
+            return this.segment(unacked.seq, new FlagSet(Flags.Ack | Flags.Psh), unacked.payload.slice(0, 1));
         }
         const byte = this.sendQueue.shift();
         return byte === undefined
@@ -405,11 +420,14 @@ export class Connection {
         this.remoteWindow = window;
         this.persist.update(window, nowMs, this.rtt.timeoutMs());
     }
+    segment(seq, flags, payload) {
+        return buildSegment(this.localPort, this.remotePort, seq, this.recvNxt, this.availableWindowU16(), this.mss, flags, payload);
+    }
     ackSegment() {
-        return buildSegment(this.localPort, this.remotePort, this.sendNxt, this.recvNxt, this.availableWindowU16(), this.mss, new FlagSet(Flags.Ack), new Uint8Array());
+        return this.segment(this.sendNxt, new FlagSet(Flags.Ack), new Uint8Array());
     }
     segmentFor(tracked) {
-        return buildSegment(this.localPort, this.remotePort, tracked.seq, this.recvNxt, this.availableWindowU16(), this.mss, tracked.flags, tracked.payload);
+        return this.segment(tracked.seq, tracked.flags, tracked.payload);
     }
     negotiateMss(segment, config) {
         this.mss = Math.max(1, Math.min(segment.maxSegmentSize() ?? 1024, config.mss));

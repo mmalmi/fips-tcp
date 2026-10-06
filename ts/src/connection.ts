@@ -1,6 +1,6 @@
 import { Reno } from "./reno.js";
 import { RttEstimator } from "./rtt.js";
-import { buildSegment } from "./segment.js";
+import { buildSegment, resetResponse } from "./segment.js";
 import { after, before, beforeOrEqual, distance, inClosedInterval, u32 } from "./seq.js";
 import { Config, State } from "./types.js";
 import { FIPS_VERSION, FlagSet, Flags, Segment } from "./wire.js";
@@ -84,6 +84,20 @@ export class Connection {
       connection,
       [connection.sendTracked(new FlagSet(Flags.Syn | Flags.Ack), new Uint8Array(), nowMs)],
     ];
+  }
+
+  handshakeResponse(segment: Segment): Segment | undefined {
+    if (segment.flags.has(Flags.Rst)) return undefined;
+    if (this.state === State.SynSent) {
+      if (segment.ack !== undefined &&
+          (!after(segment.ack, this.sendUna) || after(segment.ack, this.sendNxt))) {
+        return resetResponse(segment);
+      }
+    } else if (segment.flags.has(Flags.Syn) &&
+               (this.state !== State.SynReceived || u32(segment.seq + 1) !== this.recvNxt)) {
+      return this.ackSegment();
+    }
+    return undefined;
   }
 
   onSegment(segment: Segment, nowMs: number, config: Config): ConnectionUpdate {
@@ -434,16 +448,7 @@ export class Connection {
     const unacked = this.unacked.find((segment) => segment.payload.length > 0);
     if (unacked !== undefined) {
       this.rtt.onRetransmit(this.sendNxt);
-      return buildSegment(
-        this.localPort,
-        this.remotePort,
-        unacked.seq,
-        this.recvNxt,
-        this.availableWindowU16(),
-        this.mss,
-        new FlagSet(Flags.Ack | Flags.Psh),
-        unacked.payload.slice(0, 1),
-      );
+      return this.segment(unacked.seq, new FlagSet(Flags.Ack | Flags.Psh), unacked.payload.slice(0, 1));
     }
     const byte = this.sendQueue.shift();
     return byte === undefined
@@ -456,30 +461,17 @@ export class Connection {
     this.persist.update(window, nowMs, this.rtt.timeoutMs());
   }
 
+  private segment(seq: number, flags: FlagSet, payload: Uint8Array): Segment {
+    return buildSegment(this.localPort, this.remotePort, seq, this.recvNxt,
+      this.availableWindowU16(), this.mss, flags, payload);
+  }
+
   private ackSegment(): Segment {
-    return buildSegment(
-      this.localPort,
-      this.remotePort,
-      this.sendNxt,
-      this.recvNxt,
-      this.availableWindowU16(),
-      this.mss,
-      new FlagSet(Flags.Ack),
-      new Uint8Array(),
-    );
+    return this.segment(this.sendNxt, new FlagSet(Flags.Ack), new Uint8Array());
   }
 
   private segmentFor(tracked: TrackedSegment): Segment {
-    return buildSegment(
-      this.localPort,
-      this.remotePort,
-      tracked.seq,
-      this.recvNxt,
-      this.availableWindowU16(),
-      this.mss,
-      tracked.flags,
-      tracked.payload,
-    );
+    return this.segment(tracked.seq, tracked.flags, tracked.payload);
   }
 
   private negotiateMss(segment: Segment, config: Config): void {

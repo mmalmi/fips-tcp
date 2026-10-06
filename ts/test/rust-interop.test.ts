@@ -68,7 +68,7 @@ class RustDriver {
 }
 
 class CrossPair {
-  readonly ts: Stack;
+  ts: Stack;
   readonly rust = new RustDriver();
   now = 0;
   private rustOutbound: Uint8Array[] = [];
@@ -138,6 +138,50 @@ afterEach(async () => {
 });
 
 describe("live Rust/TypeScript TCP/FIPS interoperability", () => {
+  test.each(["TypeScript", "Rust"])("%s reconnects the same tuple after its reset is lost", async (initiator) => {
+    const pair = new CrossPair();
+    pairs.push(pair);
+    const tsClient = initiator === "TypeScript";
+    const connect = async (): Promise<number> => tsClient
+      ? pair.ts.connect("rust", 443, pair.now)
+      : Number(await pair.rustCommand({ op: "autoConnect", peer: "ts", remotePort: 443, now: pair.now }));
+    const accept = async (): Promise<number> => tsClient
+      ? Number(await pair.rustCommand({ op: "accept", port: 443 }))
+      : pair.ts.accept(443)!;
+    const state = async (id: number): Promise<unknown> => tsClient
+      ? pair.rustCommand({ op: "state", id }) : pair.ts.state(id);
+    if (tsClient) await pair.rustCommand({ op: "listen", port: 443 });
+    else pair.ts.listen(443);
+    await connect();
+    await pair.settle();
+    const retained = await accept();
+    expect(await state(retained)).toBe(tsClient ? "established" : State.Established);
+
+    // Recreate only the client; the peer never sees its previous reset.
+    pair.advance(1);
+    if (tsClient) pair.ts = new Stack({}, 2n);
+    else await pair.rustCommand({ op: "configure", maxConnections: 8, maxConnectionsPerPeer: 4, isnSeed: 2 });
+    const fresh = await connect();
+    await pair.settle();
+    expect(await state(retained)).toBe(tsClient ? null : undefined);
+    pair.advance(pair.ts.config.initialRtoMs);
+    await pair.settle();
+    const accepted = await accept();
+    expect(accepted).not.toBe(retained);
+    expect(await state(accepted)).toBe(tsClient ? "established" : State.Established);
+    expect(pair.now).toBeLessThanOrEqual(2001);
+    const request = Buffer.from("new request");
+    const response = Buffer.from("new response");
+    const rustClient = tsClient ? accepted : fresh;
+    const tsId = tsClient ? fresh : accepted;
+    pair.ts.write(tsId, tsClient ? request : response, pair.now);
+    await pair.rustCommand({ op: "write", id: rustClient, bytes: toHex(tsClient ? response : request), now: pair.now });
+    await pair.settle();
+    expect(pair.ts.read(tsId, 64, pair.now)).toEqual(Uint8Array.from(tsClient ? response : request));
+    expect(fromHex(String(await pair.rustCommand({ op: "read", id: rustClient, max: 64, now: pair.now }))))
+      .toEqual(Uint8Array.from(tsClient ? request : response));
+  }, 30_000);
+
   test.each(["TypeScript", "Rust"])("%s establishes a reserved stream during a half-open flood", async (initiator) => {
     const pair = new CrossPair({ maxConnections: 4, maxConnectionsPerPeer: 2 });
     pairs.push(pair);

@@ -149,6 +149,26 @@ where
             return Ok(());
         };
 
+        // RFC 9293 3.10.7.3 and 3.10.7.4: reject stale handshake messages.
+        let connection = &self.connections[&id];
+        if connection.state == State::SynSent
+            && !segment.flags.contains(Flags::RST)
+            && segment.ack.is_some_and(|ack| {
+                !after(ack, connection.send_una) || after(ack, connection.send_nxt)
+            })
+        {
+            self.emit_reset(peer, &segment)?;
+            return Ok(());
+        }
+        if connection.state != State::SynSent
+            && !segment.flags.contains(Flags::RST)
+            && segment.flags.contains(Flags::SYN)
+            && (connection.state != State::SynReceived
+                || segment.seq.wrapping_add(1) != connection.recv_nxt)
+        {
+            self.emit(id, vec![connection.ack_segment()])?;
+            return Ok(());
+        }
         let update = self
             .connections
             .get_mut(&id)

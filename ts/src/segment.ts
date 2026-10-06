@@ -1,3 +1,4 @@
+import { u32 } from "./seq.js";
 import { FIPS_VERSION, FlagSet, Flags, Segment, TcpOptionKind } from "./wire.js";
 
 export function buildSegment(
@@ -24,5 +25,17 @@ export function buildSegment(
         ]
       : [],
     payload,
+  });
+}
+
+export function resetResponse(incoming: Segment): Segment {
+  const hasAck = incoming.ack !== undefined;
+  return new Segment({
+    srcPort: incoming.dstPort,
+    dstPort: incoming.srcPort,
+    seq: incoming.ack ?? 0,
+    ...(hasAck ? {} : { ack: u32(incoming.seq + incoming.sequenceLength()) }),
+    flags: new FlagSet(hasAck ? Flags.Rst : Flags.Rst | Flags.Ack),
+    window: 0,
   });
 }

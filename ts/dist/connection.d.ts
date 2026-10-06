@@ -30,6 +30,7 @@ export declare class Connection {
     private constructor();
     static client(peer: string, localPort: number, remotePort: number, isn: number, nowMs: number, config: Config): [Connection, Segment[]];
     static server(peer: string, syn: Segment, isn: number, nowMs: number, config: Config): [Connection, Segment[]];
+    handshakeResponse(segment: Segment): Segment | undefined;
     onSegment(segment: Segment, nowMs: number, config: Config): ConnectionUpdate;
     write(bytes: Uint8Array, nowMs: number, config: Config): [number, Segment[]];
     read(max: number): [Uint8Array, Segment[]];
@@ -48,6 +49,7 @@ export declare class Connection {
     private hasZeroWindowWork;
     private zeroWindowProbe;
     private updateRemoteWindow;
+    private segment;
     private ackSegment;
     private segmentFor;
     private negotiateMss;

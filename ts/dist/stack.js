@@ -1,7 +1,7 @@
 import { Connection } from "./connection.js";
-import { u32 } from "./seq.js";
+import { resetResponse } from "./segment.js";
 import { makeConfig } from "./types.js";
-import { FIPS_VERSION, FlagSet, Flags, Segment } from "./wire.js";
+import { FIPS_VERSION, Flags, Segment } from "./wire.js";
 import { markerConnectionId, MarkerStatus } from "./marker.js";
 const connectionKey = (peer, localPort, remotePort) => `${peer.length}:${peer}:${localPort}:${remotePort}`;
 export class Stack {
@@ -105,6 +105,12 @@ export class Stack {
         const connection = this.connections.get(id);
         if (connection === undefined)
             throw new Error("connection lookup is inconsistent");
+        // RFC 9293 3.10.7.3 and 3.10.7.4: reject stale handshake messages.
+        const response = connection.handshakeResponse(segment);
+        if (response !== undefined) {
+            this.emit(id, [response]);
+            return;
+        }
         const update = connection.onSegment(segment, nowMs, this.config);
         if (update.accepted) {
             const queue = this.accepts.get(connection.localPort) ?? [];
@@ -189,17 +195,7 @@ export class Stack {
             this.outbound.push({ peer, bytes: segment.encode() });
     }
     emitReset(peer, incoming) {
-        const hasAck = incoming.ack !== undefined;
-        const flags = new FlagSet(hasAck ? Flags.Rst : Flags.Rst | Flags.Ack);
-        const reset = new Segment({
-            srcPort: incoming.dstPort,
-            dstPort: incoming.srcPort,
-            seq: incoming.ack ?? 0,
-            ...(hasAck ? {} : { ack: u32(incoming.seq + incoming.sequenceLength()) }),
-            flags,
-            window: 0,
-        });
-        this.outbound.push({ peer, bytes: reset.encode() });
+        this.outbound.push({ peer, bytes: resetResponse(incoming).encode() });
     }
     removeConnection(id) {
         const connection = this.connections.get(id);

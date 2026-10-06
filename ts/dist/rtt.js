@@ -1,3 +1,4 @@
+import { after } from "./seq.js";
 export class RttEstimator {
     minRtoMs;
     maxRtoMs;
@@ -6,6 +7,7 @@ export class RttEstimator {
     rttvarMs = 0;
     rtoMs;
     consecutiveRtos = 0;
+    sampleAfter;
     constructor(initialRtoMs, minRtoMs, maxRtoMs) {
         this.minRtoMs = minRtoMs;
         this.maxRtoMs = maxRtoMs;
@@ -13,6 +15,13 @@ export class RttEstimator {
     }
     timeoutMs() {
         return this.rtoMs;
+    }
+    canSample(endSeq) {
+        return this.sampleAfter === undefined || after(endSeq, this.sampleAfter);
+    }
+    onRetransmit(endSeq) {
+        // An old-flight cumulative ACK cannot provide a fresh RTT sample.
+        this.sampleAfter = endSeq;
     }
     sample(sampleMs) {
         const sample = Math.max(1, sampleMs);
@@ -28,6 +37,7 @@ export class RttEstimator {
         }
         this.rtoMs = Math.min(this.maxRtoMs, Math.max(this.minRtoMs, this.srttMs + Math.max(5, this.rttvarMs * 4)));
         this.consecutiveRtos = 0;
+        this.sampleAfter = undefined;
     }
     onTimeout() {
         this.rtoMs = Math.min(this.maxRtoMs, this.rtoMs * 2);

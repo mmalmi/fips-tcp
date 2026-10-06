@@ -12,6 +12,8 @@ enum Command {
     Configure {
         max_connections: usize,
         max_connections_per_peer: usize,
+        #[serde(default)]
+        isn_seed: Option<u64>,
     },
     Reserve {
         slots: usize,
@@ -25,6 +27,11 @@ enum Command {
         local_port: u16,
         remote_port: u16,
         isn: u32,
+        now: u64,
+    },
+    AutoConnect {
+        peer: String,
+        remote_port: u16,
         now: u64,
     },
     Input {
@@ -107,6 +114,7 @@ fn execute(
         Command::Configure {
             max_connections,
             max_connections_per_peer,
+            isn_seed,
         } => {
             *stack = Stack::new(
                 fips_tcp::Config {
@@ -114,7 +122,7 @@ fn execute(
                     max_connections_per_peer,
                     ..fips_tcp::Config::default()
                 },
-                0x55aa_1234_9988_7766,
+                isn_seed.unwrap_or(0x55aa_1234_9988_7766),
             );
             markers.clear();
             *next_marker = 1;
@@ -135,6 +143,13 @@ fn execute(
             now,
         } => stack
             .connect_from_with_isn(peer, local_port, remote_port, isn, now)
+            .map(|id| json!(id.get())),
+        Command::AutoConnect {
+            peer,
+            remote_port,
+            now,
+        } => stack
+            .connect(peer, remote_port, now)
             .map(|id| json!(id.get())),
         Command::Input { peer, bytes, now } => stack
             .input(peer, &decode_hex(&bytes)?, now)

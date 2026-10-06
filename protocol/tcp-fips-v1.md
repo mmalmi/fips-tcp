@@ -88,3 +88,10 @@ an in-window non-exact RST elicits one challenge ACK without closing, and an
 out-of-window RST is silently dropped. With a zero receive window, only the
 exact `RCV.NXT` reset is accepted. These checks apply after the authenticated
 carrier identity and TCP port tuple have selected the retained connection.
+
+Handshake recovery follows RFC 9293 sections 3.10.7.3 and 3.10.7.4. In
+SYN-SENT, an unacceptable ACK elicits a reset unless the incoming segment is
+itself a reset. An unexpected SYN on a retained synchronized tuple elicits a
+challenge ACK. Together these responses clear abandoned peer state when a
+client restarts and reuses its ports after losing its old reset; the new SYN
+can then succeed on retransmission. Restarts must use a fresh ISN seed.
