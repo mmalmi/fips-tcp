@@ -647,7 +647,7 @@ impl<P: Clone> Connection<P> {
             let segment = self.unacked.pop_front().expect("front exists");
             acked_payload += segment.payload.len();
             fin_acked |= segment.flags.contains(Flags::FIN);
-            if !segment.retransmitted {
+            if self.rtt.can_sample(segment.end_seq()) {
                 rtt_sample = Some(now_ms.saturating_sub(segment.sent_at_ms));
             }
         }
@@ -818,7 +818,6 @@ impl<P: Clone> Connection<P> {
             flags,
             payload,
             sent_at_ms: now_ms,
-            retransmitted: false,
             transmissions: 1,
         };
         self.send_nxt = tracked.end_seq();
@@ -834,8 +833,8 @@ impl<P: Clone> Connection<P> {
         let remote_port = self.remote_port;
         let mss = self.mss as u16;
         let tracked = self.unacked.front_mut()?;
+        self.rtt.on_retransmit(self.send_nxt);
         tracked.sent_at_ms = now_ms;
-        tracked.retransmitted = true;
         tracked.transmissions = tracked.transmissions.saturating_add(1);
         if timeout {
             self.duplicate_acks = 0;
@@ -895,6 +894,7 @@ impl<P: Clone> Connection<P> {
             .iter()
             .find(|segment| !segment.payload.is_empty())
         {
+            self.rtt.on_retransmit(self.send_nxt);
             return Some(build_segment(
                 SegmentHeader {
                     local_port: self.local_port,

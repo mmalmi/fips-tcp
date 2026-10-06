@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { FlagSet, Flags, MarkerStatus, Segment } from "../src/index.js";
 import { Pair } from "./pair.js";
-import { recoveryVectors } from "./recovery-vectors.js";
+import { recoveryVectors, rttRecoveryVectors } from "./recovery-vectors.js";
 
 describe("timed-out flight recovery", () => {
   test.each([0, 0xffff])("a partial ACK cannot exceed the retry bound with window %i", (window) => {
@@ -100,4 +100,52 @@ describe("timed-out flight recovery", () => {
     pair.settle();
     expect(pair.stepWith((_fromA, bytes) => [bytes])).toBe(0);
   });
+});
+
+test.each(rttRecoveryVectors)("$name preserves backoff until fresh data", (v) => {
+  const pair = new Pair();
+  pair.b.listen(443);
+  const client = pair.a.connectFromWithIsn("b", 50_000, 443, v.initialSequence, 0);
+  pair.settle();
+  const server = pair.b.accept(443)!;
+  const bytes = new Uint8Array(v.chunkBytes).fill(0x73);
+  for (let i = 0; i < 2; i += 1) pair.a.write(client, bytes, pair.now);
+  const flight = pair.a.drainOutbound();
+  expect(flight).toHaveLength(2);
+  pair.b.input("a", flight[1]!.bytes, pair.now);
+  pair.b.drainOutbound();
+  for (const delta of v.droppedPollDeltasMs) {
+    pair.advance(delta);
+    pair.a.poll(pair.now);
+    expect(pair.a.drainOutbound()).toHaveLength(1);
+  }
+  pair.advance(v.recoveryPollDeltaMs);
+  pair.a.poll(pair.now);
+  const repair = pair.a.drainOutbound();
+  expect(repair).toHaveLength(1);
+  pair.b.input("a", repair[0]!.bytes, pair.now);
+  const ack = pair.b.drainOutbound();
+  expect(ack).toHaveLength(1);
+  pair.a.input("b", ack[0]!.bytes, pair.now);
+  expect(pair.b.read(server, 2 * v.chunkBytes, pair.now)).toHaveLength(2 * v.chunkBytes);
+  pair.settle();
+  pair.a.write(client, bytes, pair.now);
+  expect(pair.a.drainOutbound()).toHaveLength(1);
+  pair.advance(v.expectedBackoffMs);
+  pair.a.poll(pair.now);
+  const nextRepair = pair.a.drainOutbound();
+  expect(nextRepair).toHaveLength(1);
+  pair.b.input("a", nextRepair[0]!.bytes, pair.now);
+  pair.settle();
+  pair.a.write(client, bytes, pair.now);
+  const fresh = pair.a.drainOutbound();
+  expect(fresh).toHaveLength(1);
+  pair.advance(v.freshRttMs);
+  pair.b.input("a", fresh[0]!.bytes, pair.now);
+  pair.settle();
+  pair.a.write(client, bytes, pair.now);
+  pair.a.drainOutbound();
+  pair.advance(v.expectedFreshRtoMs);
+  pair.a.poll(pair.now);
+  expect(pair.a.drainOutbound()).toHaveLength(1);
 });

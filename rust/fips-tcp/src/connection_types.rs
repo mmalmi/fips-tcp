@@ -6,7 +6,6 @@ pub(crate) struct TrackedSegment {
     pub(crate) flags: Flags,
     pub(crate) payload: Vec<u8>,
     pub(crate) sent_at_ms: u64,
-    pub(crate) retransmitted: bool,
     pub(crate) transmissions: u8,
 }
 

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "mixed-cumulative-ack-across-wrap",
+    "initialSequence": 4294967264,
+    "chunkBytes": 101,
+    "droppedPollDeltasMs": [
+      200,
+      400,
+      800
+    ],
+    "recoveryPollDeltaMs": 1600,
+    "expectedBackoffMs": 3200,
+    "freshRttMs": 50,
+    "expectedFreshRtoMs": 200
+  }
+]

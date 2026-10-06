@@ -262,7 +262,7 @@ export class Connection {
       const tracked = this.unacked.shift()!;
       ackedPayload += tracked.payload.length;
       finAcked ||= tracked.flags.has(Flags.Fin);
-      if (!tracked.retransmitted) rttSample = Math.max(0, nowMs - tracked.sentAtMs);
+      if (this.rtt.canSample(trackedEnd(tracked))) rttSample = Math.max(0, nowMs - tracked.sentAtMs);
     }
     const first = this.unacked[0];
     if (
@@ -378,7 +378,6 @@ export class Connection {
       flags,
       payload: payload.slice(),
       sentAtMs: nowMs,
-      retransmitted: false,
       transmissions: 1,
     };
     this.sendNxt = trackedEnd(tracked);
@@ -390,8 +389,8 @@ export class Connection {
   private retransmitOldest(nowMs: number, timeout: boolean): Segment | undefined {
     const tracked = this.unacked[0];
     if (tracked === undefined) return undefined;
+    this.rtt.onRetransmit(this.sendNxt);
     tracked.sentAtMs = nowMs;
-    tracked.retransmitted = true;
     tracked.transmissions = Math.min(0xff, tracked.transmissions + 1);
     if (timeout) this.duplicateAcks = 0;
     return this.segmentFor(tracked);
@@ -434,6 +433,7 @@ export class Connection {
   private zeroWindowProbe(nowMs: number): Segment | undefined {
     const unacked = this.unacked.find((segment) => segment.payload.length > 0);
     if (unacked !== undefined) {
+      this.rtt.onRetransmit(this.sendNxt);
       return buildSegment(
         this.localPort,
         this.remotePort,

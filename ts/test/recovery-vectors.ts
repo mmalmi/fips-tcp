@@ -15,3 +15,18 @@ export interface RecoveryVector {
 export const recoveryVectors = JSON.parse(readFileSync(
   new URL("../../rust/fips-tcp/protocol/recovery-vectors.json", import.meta.url), "utf8",
 )) as RecoveryVector[];
+
+export interface RttRecoveryVector {
+  name: string;
+  initialSequence: number;
+  chunkBytes: number;
+  droppedPollDeltasMs: number[];
+  recoveryPollDeltaMs: number;
+  expectedBackoffMs: number;
+  freshRttMs: number;
+  expectedFreshRtoMs: number;
+}
+
+export const rttRecoveryVectors = JSON.parse(readFileSync(
+  new URL("../../rust/fips-tcp/protocol/rtt-recovery-vectors.json", import.meta.url), "utf8",
+)) as RttRecoveryVector[];

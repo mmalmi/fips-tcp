@@ -1,3 +1,5 @@
+use crate::seq::after;
+
 #[derive(Clone, Debug)]
 pub(crate) struct RttEstimator {
     have_measurement: bool,
@@ -7,6 +9,7 @@ pub(crate) struct RttEstimator {
     min_rto_ms: u64,
     max_rto_ms: u64,
     consecutive_rtos: u8,
+    sample_after: Option<u32>,
 }
 
 impl RttEstimator {
@@ -19,11 +22,21 @@ impl RttEstimator {
             min_rto_ms,
             max_rto_ms,
             consecutive_rtos: 0,
+            sample_after: None,
         }
     }
 
     pub(crate) fn timeout_ms(&self) -> u64 {
         self.rto_ms
+    }
+
+    pub(crate) fn can_sample(&self, end_seq: u32) -> bool {
+        self.sample_after.is_none_or(|end| after(end_seq, end))
+    }
+
+    pub(crate) fn on_retransmit(&mut self, end_seq: u32) {
+        // An old-flight cumulative ACK cannot provide a fresh RTT sample.
+        self.sample_after = Some(end_seq);
     }
 
     pub(crate) fn sample(&mut self, sample_ms: u64) {
@@ -43,6 +56,7 @@ impl RttEstimator {
             .saturating_add(margin)
             .clamp(self.min_rto_ms, self.max_rto_ms);
         self.consecutive_rtos = 0;
+        self.sample_after = None;
     }
 
     pub(crate) fn on_timeout(&mut self) {
