@@ -116,10 +116,8 @@ impl FipsTcpEndpoint {
         slots: usize,
         eligible: Arc<dyn Fn(&PeerIdentity) -> bool + Send + Sync>,
     ) -> Result<(), AdapterError> {
-        self.stack.set_connection_reservation(
-            slots,
-            Arc::new(move |npub| PeerIdentity::from_npub(npub).is_ok_and(|peer| eligible(&peer))),
-        )?;
+        self.stack
+            .set_connection_reservation(slots, Arc::new(move |peer| eligible(&peer.0)))?;
         Ok(())
     }
 
