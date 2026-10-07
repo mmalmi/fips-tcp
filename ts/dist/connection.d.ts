@@ -14,6 +14,7 @@ export declare class Connection {
     private remoteWindow;
     private mss;
     private readonly receiveCapacity;
+    private readonly maxTransmissions;
     private readonly sendQueue;
     private readonly recvQueue;
     private readonly reassembly;

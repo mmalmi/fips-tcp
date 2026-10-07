@@ -402,6 +402,7 @@ impl<P: Clone> Connection<P> {
             remote_window: u16::MAX as usize,
             mss,
             receive_capacity: config.receive_buffer,
+            max_transmissions: config.max_retransmissions,
             send_queue: VecDeque::new(),
             recv_queue: VecDeque::new(),
             reassembly: Vec::new(),
@@ -846,33 +847,6 @@ impl<P: Clone> Connection<P> {
         let segment = self.segment_for(&tracked, config);
         self.unacked.push_back(tracked);
         segment
-    }
-
-    fn retransmit_oldest(&mut self, now_ms: u64, timeout: bool) -> Option<Segment> {
-        let window = self.available_window_u16();
-        let ack = self.recv_nxt;
-        let local_port = self.local_port;
-        let remote_port = self.remote_port;
-        let mss = self.mss as u16;
-        let tracked = self.unacked.front_mut()?;
-        self.rtt.on_retransmit(self.send_nxt);
-        tracked.sent_at_ms = now_ms;
-        tracked.transmissions = tracked.transmissions.saturating_add(1);
-        if timeout {
-            self.duplicate_acks = 0;
-        }
-        Some(build_segment(
-            SegmentHeader {
-                local_port,
-                remote_port,
-                seq: tracked.seq,
-                ack,
-                window,
-                mss,
-                flags: tracked.flags,
-            },
-            tracked.payload.clone(),
-        ))
     }
 
     fn flush_data(&mut self, now_ms: u64, config: &Config) -> Vec<Segment> {

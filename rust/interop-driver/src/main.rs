@@ -14,6 +14,14 @@ enum Command {
         max_connections_per_peer: usize,
         #[serde(default)]
         isn_seed: Option<u64>,
+        #[serde(default)]
+        max_retransmissions: Option<u8>,
+        #[serde(default)]
+        initial_rto_ms: Option<u64>,
+        #[serde(default)]
+        min_rto_ms: Option<u64>,
+        #[serde(default)]
+        max_rto_ms: Option<u64>,
     },
     Reserve {
         slots: usize,
@@ -115,12 +123,22 @@ fn execute(
             max_connections,
             max_connections_per_peer,
             isn_seed,
+            max_retransmissions,
+            initial_rto_ms,
+            min_rto_ms,
+            max_rto_ms,
         } => {
+            let defaults = fips_tcp::Config::default();
             *stack = Stack::new(
                 fips_tcp::Config {
                     max_connections,
                     max_connections_per_peer,
-                    ..fips_tcp::Config::default()
+                    max_retransmissions: max_retransmissions
+                        .unwrap_or(defaults.max_retransmissions),
+                    initial_rto_ms: initial_rto_ms.unwrap_or(defaults.initial_rto_ms),
+                    min_rto_ms: min_rto_ms.unwrap_or(defaults.min_rto_ms),
+                    max_rto_ms: max_rto_ms.unwrap_or(defaults.max_rto_ms),
+                    ..defaults
                 },
                 isn_seed.unwrap_or(0x55aa_1234_9988_7766),
             );

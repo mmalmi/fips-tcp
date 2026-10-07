@@ -14,6 +14,8 @@ pub struct Config {
     pub initial_rto_ms: u64,
     pub min_rto_ms: u64,
     pub max_rto_ms: u64,
+    /// Maximum transmissions per tracked segment, including its initial send.
+    /// Zero-window probes have a separate bounded persistence budget.
     pub max_retransmissions: u8,
     /// Maximum retention after the peer acknowledges our FIN without sending its FIN.
     pub fin_wait_2_ms: u64,

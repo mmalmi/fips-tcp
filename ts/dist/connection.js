@@ -20,6 +20,7 @@ export class Connection {
     remoteWindow = 0xffff;
     mss;
     receiveCapacity;
+    maxTransmissions;
     sendQueue = [];
     recvQueue = [];
     reassembly = [];
@@ -43,6 +44,7 @@ export class Connection {
         this.recvNxt = recvNxt;
         this.mss = config.mss;
         this.receiveCapacity = config.receiveBuffer;
+        this.maxTransmissions = config.maxRetransmissions;
         this.rtt = new RttEstimator(config.initialRtoMs, config.minRtoMs, config.maxRtoMs);
         this.reno = new Reno(this.mss);
     }
@@ -368,7 +370,7 @@ export class Connection {
     }
     retransmitOldest(nowMs, timeout) {
         const tracked = this.unacked[0];
-        if (tracked === undefined)
+        if (tracked === undefined || tracked.transmissions >= this.maxTransmissions)
             return undefined;
         this.rtt.onRetransmit(this.sendNxt);
         tracked.sentAtMs = nowMs;

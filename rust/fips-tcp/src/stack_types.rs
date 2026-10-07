@@ -16,6 +16,7 @@ struct Connection<P> {
     remote_window: usize,
     mss: usize,
     receive_capacity: usize,
+    max_transmissions: u8,
     send_queue: VecDeque<u8>,
     recv_queue: VecDeque<u8>,
     reassembly: Vec<ReassemblySegment>,

@@ -9,6 +9,8 @@ export interface Config {
     initialRtoMs: number;
     minRtoMs: number;
     maxRtoMs: number;
+    /** Total transmissions per tracked segment, including its initial send.
+     * Zero-window persistence has a separate probe budget. */
     maxRetransmissions: number;
     /** Maximum retention after the peer ACKs our FIN without sending its FIN. */
     finWait2Ms: number;

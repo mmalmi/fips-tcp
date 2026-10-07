@@ -1,0 +1,7 @@
+[
+  { "name": "window reopening cannot rearm unlimited retries", "initialSequence": 1000, "maxTransmissions": 3, "reset": "window" },
+  { "name": "retry budget holds across sequence wrap", "initialSequence": 4294967288, "maxTransmissions": 3, "reset": "window" },
+  { "name": "incoming data cannot rearm unlimited retries", "initialSequence": 1000, "maxTransmissions": 3, "reset": "payload" },
+  { "name": "initial transmission consumes a one-send budget", "initialSequence": 1000, "maxTransmissions": 1, "reset": "window" },
+  { "name": "default retry budget cannot be bypassed", "initialSequence": 1000, "maxTransmissions": 8, "reset": "window" }
+]
