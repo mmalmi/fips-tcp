@@ -20,6 +20,10 @@ test.each(windowUpdateVectors)("$name", (vector) => {
   expect(pair.a.drainOutbound()).toHaveLength(0);
   let lastUpdate = new Uint8Array();
   for (const size of vector.readChunks) {
+    for (let i = 0; i < (vector.duplicateAcksBeforeRead ?? 0); i += 1) {
+      pair.a.input("b", previous.encode(), pair.now);
+      expect(pair.a.drainOutbound(), "window updates reset earlier duplicates").toHaveLength(0);
+    }
     expect(pair.b.read(server, size, pair.now)).toEqual(new Uint8Array(size).fill(1));
     const updates = pair.b.drainOutbound();
     expect(updates).toHaveLength(1);
@@ -31,9 +35,14 @@ test.each(windowUpdateVectors)("$name", (vector) => {
     pair.a.input("b", lastUpdate, pair.now);
     expect(pair.a.drainOutbound(), "window updates must not retransmit data").toHaveLength(0);
   }
-  for (const flag of [Flags.Syn, Flags.Fin]) {
+  for (const flag of [Flags.Psh, Flags.Syn, Flags.Fin]) {
+    for (let i = 0; i < (vector.duplicateAcksBeforeRead ?? 0); i += 1) {
+      pair.a.input("b", lastUpdate, pair.now);
+      expect(pair.a.drainOutbound()).toHaveLength(0);
+    }
     const decoded = Segment.decode(lastUpdate);
-    const control = new Segment({ ...decoded, ack: decoded.ack!, flags: new FlagSet(Flags.Ack | flag) });
+    const control = new Segment({ ...decoded, ack: decoded.ack!, flags: new FlagSet(Flags.Ack | flag),
+      payload: flag === Flags.Psh ? Uint8Array.of(9) : new Uint8Array() });
     for (let i = 0; i < 3; i += 1) {
       pair.a.input("b", control.encode(), pair.now);
       expect(pair.a.drainOutbound().every((packet) => Segment.decode(packet.bytes).payload.length === 0)).toBe(true);

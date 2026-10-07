@@ -50,6 +50,21 @@ public library gains IP APIs or runtime dependencies. iperf3 remains a later
 system test rather than a direct oracle: it also requires an OS-visible socket
 bridge and implementation of iperf3's application-level control flow.
 
+The oracle also drives both production senders through the same controlled ACK
+trace: two duplicates, a receive-window increase, and later three unchanged
+duplicates. Both reset the duplicate count on reopening and repair the missing
+segment only after three fresh duplicates. Shared Rust/TypeScript vectors and
+live interop cover these interleavings and sequence wrap; core regression tests
+also cover interruption by data/control ACKs.
+
+One compatibility difference is deliberate: TCP/FIPS counts decreasing-window
+ACKs because deployed receivers subtract buffered out-of-order data from their
+advertised window. smoltcp and [RFC 5681 section 2](https://www.rfc-editor.org/rfc/rfc5681.html#section-2)
+require an unchanged window instead. Excluding decreases without changing
+those receivers would disable their fast-loss signal. Reordered or delayed
+smaller-window advertisements can therefore still count toward fast retransmit;
+this test coverage is not a claim of full TCP standards conformance.
+
 Features intentionally deferred from TCP/FIPS v1 include SACK, window scaling,
 timestamps, ECN, urgent data, and delayed ACK. Adding one requires a protocol
 revision, matching Rust and TypeScript behavior, shared vectors, and live

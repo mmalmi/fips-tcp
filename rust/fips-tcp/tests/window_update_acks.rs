@@ -8,6 +8,8 @@ struct Vector {
     name: String,
     initial_sequence: u32,
     read_chunks: Vec<usize>,
+    #[serde(default)]
+    duplicate_acks_before_read: usize,
 }
 
 fn pump(a: &mut Stack<String>, b: &mut Stack<String>) {
@@ -56,6 +58,10 @@ fn shared_window_update_vectors_do_not_signal_loss_but_duplicate_acks_do() {
         assert!(a.drain_outbound().is_empty());
         let mut last_update = Vec::new();
         for size in &vector.read_chunks {
+            for _ in 0..vector.duplicate_acks_before_read {
+                a.input("b".into(), &previous.encode().unwrap(), 0).unwrap();
+                assert!(a.drain_outbound().is_empty(), "{}", vector.name);
+            }
             assert_eq!(b.read(server, *size, 0).unwrap(), vec![1; *size]);
             let updates = b.drain_outbound();
             assert_eq!(updates.len(), 1);
@@ -71,10 +77,17 @@ fn shared_window_update_vectors_do_not_signal_loss_but_duplicate_acks_do() {
                 vector.name
             );
         }
-        // Retransmitted connection-control ACKs also cannot signal data loss.
-        for flag in [Flags::SYN, Flags::FIN] {
+        // Data and connection-control ACKs also interrupt duplicate ACK runs.
+        for flag in [Flags::PSH, Flags::SYN, Flags::FIN] {
+            for _ in 0..vector.duplicate_acks_before_read {
+                a.input("b".into(), &last_update, 0).unwrap();
+                assert!(a.drain_outbound().is_empty(), "{}", vector.name);
+            }
             let mut control = Segment::decode(&last_update).unwrap();
             control.flags = Flags::ACK | flag;
+            if flag == Flags::PSH {
+                control.payload = vec![9];
+            }
             for _ in 0..3 {
                 a.input("b".into(), &control.encode().unwrap(), 0).unwrap();
                 assert!(

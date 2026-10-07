@@ -264,7 +264,7 @@ export class Connection {
           const retransmit = this.retransmitOldest(nowMs, false);
           return retransmit === undefined ? { finAcked: false } : { finAcked: false, retransmit };
         }
-      }
+      } else this.duplicateAcks = 0;
       return { finAcked: false };
     }
 

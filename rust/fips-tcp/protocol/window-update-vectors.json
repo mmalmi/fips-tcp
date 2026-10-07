@@ -1,4 +1,6 @@
 [
   { "name": "partial reads only reopen receive capacity", "initialSequence": 1000, "readChunks": [1, 1, 1] },
-  { "name": "window updates across sequence wrap", "initialSequence": 4294967280, "readChunks": [2, 3, 4] }
+  { "name": "window updates across sequence wrap", "initialSequence": 4294967280, "readChunks": [2, 3, 4] },
+  { "name": "window updates reset prior duplicate ACKs", "initialSequence": 1000, "readChunks": [1, 1, 1], "duplicateAcksBeforeRead": 2 },
+  { "name": "window updates reset prior duplicate ACKs across wrap", "initialSequence": 4294967280, "readChunks": [2, 3, 4], "duplicateAcksBeforeRead": 2 }
 ]

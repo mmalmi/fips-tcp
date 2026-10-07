@@ -656,6 +656,8 @@ impl<P: Clone> Connection<P> {
                         retransmit: self.retransmit_oldest(now_ms, false),
                     };
                 }
+            } else {
+                self.duplicate_acks = 0;
             }
             return AckOutcome {
                 fin_acked: false,

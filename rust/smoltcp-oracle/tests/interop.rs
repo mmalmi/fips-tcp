@@ -275,6 +275,42 @@ impl Harness {
         }
         panic!("smoltcp oracle did not settle");
     }
+
+    fn sender_output(&mut self, sender: Direction) -> Vec<Segment> {
+        match sender {
+            Direction::FipsToSmol => self
+                .fips
+                .drain_outbound()
+                .iter()
+                .map(|packet| Segment::decode(&packet.bytes).unwrap())
+                .collect(),
+            Direction::SmolToFips => {
+                self.smol.poll(self.now_ms);
+                self.smol
+                    .device
+                    .tx
+                    .drain(..)
+                    .map(|frame| {
+                        Segment::decode(&unwrap_from_smoltcp(&frame, &mut self.stats)).unwrap()
+                    })
+                    .collect()
+            }
+        }
+    }
+
+    fn sender_input(&mut self, sender: Direction, segment: &Segment) {
+        let bytes = segment.encode().unwrap();
+        match sender {
+            Direction::FipsToSmol => self.fips.input(FIPS_PEER, &bytes, self.now_ms).unwrap(),
+            Direction::SmolToFips => {
+                self.smol
+                    .device
+                    .rx
+                    .push_back(wrap_for_smoltcp(&bytes, FIPS_IP, SMOL_IP));
+                self.smol.poll(self.now_ms);
+            }
+        }
+    }
 }
 
 fn packet_facts(direction: Direction, segment: &Segment) -> PacketFacts {
@@ -521,4 +557,78 @@ fn smoltcp_client_handshakes_and_closes_through_the_production_fips_stack() {
     assert_eq!(harness.stats.fips_options_injected, 1);
     assert_eq!(harness.stats.fips_syn_options_verified, 1);
     assert!(harness.stats.tcp_checksums_verified > 0);
+}
+
+#[test]
+fn window_reopening_resets_duplicate_ack_runs_in_fips_and_smoltcp() {
+    for sender in [Direction::FipsToSmol, Direction::SmolToFips] {
+        for initial_sequence in [1000, u32::MAX - 15] {
+            let mut harness = Harness::new();
+            harness.smol.socket().set_ack_delay(None);
+            harness.smol.socket().set_nagle_enabled(false);
+            harness.smol.listen();
+            let connection = harness
+                .fips
+                .connect_from_with_isn(FIPS_PEER, CLIENT_PORT, SERVER_PORT, initial_sequence, 0)
+                .unwrap();
+            harness.settle();
+            let receiver = match sender {
+                Direction::FipsToSmol => Direction::SmolToFips,
+                Direction::SmolToFips => Direction::FipsToSmol,
+            };
+            let mut flight = Vec::new();
+            for value in [1, 2] {
+                match sender {
+                    Direction::FipsToSmol => {
+                        harness.fips.write(connection, &[value; 16], 0).unwrap();
+                    }
+                    Direction::SmolToFips => harness.smol.send(&[value; 16]),
+                }
+                flight.extend(harness.sender_output(sender));
+            }
+            assert_eq!(flight.len(), 2, "{sender:?}");
+            // Both production receivers generate the baseline ACK. Withhold
+            // the second data segment, then inject the same controlled trace:
+            // two duplicate ACKs, one window increase, repeated three times.
+            harness.sender_input(receiver, &flight[0]);
+            let acknowledgments = harness.sender_output(receiver);
+            assert_eq!(acknowledgments.len(), 1, "{sender:?}");
+            let mut acknowledgment = acknowledgments[0].clone();
+            assert!(acknowledgment.payload.is_empty());
+            harness.sender_input(sender, &acknowledgment);
+            assert!(harness.sender_output(sender).is_empty());
+            for _ in 0..3 {
+                for _ in 0..2 {
+                    harness.sender_input(sender, &acknowledgment);
+                    assert!(
+                        harness.sender_output(sender).is_empty(),
+                        "{sender:?}: stale duplicate count caused an early repair"
+                    );
+                }
+                acknowledgment.window += 1;
+                harness.sender_input(sender, &acknowledgment);
+                assert!(harness.sender_output(sender).is_empty());
+            }
+            for _ in 0..2 {
+                harness.sender_input(sender, &acknowledgment);
+                assert!(harness.sender_output(sender).is_empty());
+            }
+            harness.sender_input(sender, &acknowledgment);
+            let repair = harness.sender_output(sender);
+            assert_eq!(
+                repair.len(),
+                1,
+                "{sender:?}: three true duplicates repair loss"
+            );
+            assert_eq!(repair[0].seq, flight[1].seq);
+            assert_eq!(repair[0].payload, flight[1].payload);
+            harness.sender_input(receiver, &repair[0]);
+            harness.settle();
+            let received = match sender {
+                Direction::FipsToSmol => harness.smol.receive(),
+                Direction::SmolToFips => harness.fips.read(connection, 64, 0).unwrap(),
+            };
+            assert_eq!(received, [vec![1; 16], vec![2; 16]].concat());
+        }
+    }
 }

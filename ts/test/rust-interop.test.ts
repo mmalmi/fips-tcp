@@ -254,10 +254,22 @@ describe("live Rust/TypeScript TCP/FIPS interoperability", () => {
       expect(right).toHaveLength(2);
       return [left.slice(0, 1), right.slice(0, 1)];
     });
-    await pair.settle();
     let leftUpdate = new Uint8Array();
     let rightUpdate = new Uint8Array();
+    await pair.step((left, right) => {
+      expect(left).toHaveLength(1);
+      expect(right).toHaveLength(1);
+      leftUpdate = Uint8Array.from(left[0]!);
+      rightUpdate = Uint8Array.from(right[0]!);
+      return [left, right];
+    });
+    expect(await pair.step()).toBe(0);
     for (const size of vector.readChunks) {
+      for (let i = 0; i < (vector.duplicateAcksBeforeRead ?? 0); i += 1) {
+        pair.ts.input("rust", rightUpdate, pair.now);
+        await pair.rustCommand({ op: "input", peer: "ts", bytes: toHex(leftUpdate), now: pair.now });
+        expect(await pair.step()).toBe(0);
+      }
       expect(pair.ts.read(tsId, size, pair.now)).toEqual(new Uint8Array(size).fill(1));
       expect(fromHex(String(await pair.rustCommand({ op: "read", id: rustId,
         max: size, now: pair.now })))).toEqual(new Uint8Array(size).fill(1));

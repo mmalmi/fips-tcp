@@ -232,6 +232,8 @@ export class Connection {
                     return retransmit === undefined ? { finAcked: false } : { finAcked: false, retransmit };
                 }
             }
+            else
+                this.duplicateAcks = 0;
             return { finAcked: false };
         }
         this.duplicateAcks = 0;

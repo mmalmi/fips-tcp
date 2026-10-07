@@ -4,6 +4,7 @@ export interface WindowUpdateVector {
   name: string;
   initialSequence: number;
   readChunks: number[];
+  duplicateAcksBeforeRead?: number;
 }
 
 export const windowUpdateVectors = JSON.parse(readFileSync(
