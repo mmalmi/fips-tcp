@@ -467,7 +467,15 @@ impl<P: Clone> Connection<P> {
         let mut output = Vec::new();
         if let Some(ack) = segment.ack {
             let previous_una = self.send_una;
-            let duplicate = ack == self.send_una && segment.payload.is_empty();
+            // Reopening receive capacity is flow control, not evidence of loss.
+            // Existing FIPS receivers reduce the window while buffering
+            // out-of-order data, so retain those ACKs as loss signals.
+            // Compare before applying the newly advertised window.
+            let duplicate = ack == self.send_una
+                && segment.payload.is_empty()
+                && !segment.flags.contains(Flags::SYN)
+                && !segment.flags.contains(Flags::FIN)
+                && usize::from(segment.window) <= self.remote_window;
             let outcome = self.apply_ack(ack, now_ms, duplicate);
             if let Some(retransmit) = outcome.retransmit {
                 output.push(retransmit);

@@ -1,0 +1,4 @@
+[
+  { "name": "partial reads only reopen receive capacity", "initialSequence": 1000, "readChunks": [1, 1, 1] },
+  { "name": "window updates across sequence wrap", "initialSequence": 4294967280, "readChunks": [2, 3, 4] }
+]

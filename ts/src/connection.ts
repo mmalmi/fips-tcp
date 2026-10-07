@@ -4,7 +4,7 @@ import { buildSegment, resetResponse } from "./segment.js";
 import { after, before, beforeOrEqual, distance, inClosedInterval, u32 } from "./seq.js";
 import { Config, State } from "./types.js";
 import { FIPS_VERSION, FlagSet, Flags, Segment } from "./wire.js";
-import { AckOutcome, ConnectionUpdate, openUpdate, ReassemblySegment, reassemblyEnd, TrackedSegment, trackedEnd } from "./connection-types.js";
+import { AckOutcome, ConnectionUpdate, isDuplicateAckCandidate, openUpdate, ReassemblySegment, reassemblyEnd, TrackedSegment, trackedEnd } from "./connection-types.js";
 import { PersistTimer } from "./persist.js";
 import { resetAction } from "./reset.js";
 import { SendProgress } from "./marker.js";
@@ -147,7 +147,7 @@ export class Connection {
     const output: Segment[] = [];
     if (segment.ack !== undefined) {
       const previousUna = this.sendUna;
-      const duplicate = segment.ack === this.sendUna && segment.payload.length === 0;
+      const duplicate = isDuplicateAckCandidate(segment, this.sendUna, this.remoteWindow);
       const outcome = this.applyAck(segment.ack, nowMs, duplicate);
       if (outcome.retransmit !== undefined) output.push(outcome.retransmit);
       if (outcome.finAcked) {

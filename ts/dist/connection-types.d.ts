@@ -20,6 +20,7 @@ export interface AckOutcome {
     finAcked: boolean;
     retransmit?: Segment;
 }
+export declare const isDuplicateAckCandidate: (segment: Segment, sendUna: number, remoteWindow: number) => boolean;
 export declare const openUpdate: (segments?: Segment[]) => ConnectionUpdate;
 export declare const trackedEnd: (segment: TrackedSegment) => number;
 export declare const reassemblyEnd: (segment: ReassemblySegment) => number;

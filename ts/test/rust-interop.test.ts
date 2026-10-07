@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { Config, ConnectionId, FIPS_VERSION, FlagSet, Flags, MarkerStatus, Segment,
   Stack, State, TcpOptionKind } from "../src/index.js";
 import { recoveryVectors } from "./recovery-vectors.js";
+import { windowUpdateVectors } from "./window-update-vectors.js";
 
 interface WireOutbound {
   peer: string;
@@ -232,6 +233,55 @@ describe("live Rust/TypeScript TCP/FIPS interoperability", () => {
     await pair.settle();
     expect(pair.ts.state(tsId)).toBe(State.TimeWait);
     expect(await pair.rustCommand({ op: "state", id: rustId })).toBeNull();
+  }, 30_000);
+
+  test.each(windowUpdateVectors)("bidirectional window updates: $name", async (vector) => {
+    const pair = new CrossPair();
+    pairs.push(pair);
+    await pair.rustCommand({ op: "listen", port: 443 });
+    const tsId = pair.ts.connectFromWithIsn("rust", 50_000, 443, vector.initialSequence, pair.now);
+    await pair.settle();
+    const rustId = Number(await pair.rustCommand({ op: "accept", port: 443 }));
+    for (const value of [1, 2]) {
+      const payload = new Uint8Array(16).fill(value);
+      pair.ts.write(tsId, payload, pair.now);
+      await pair.rustCommand({ op: "write", id: rustId, bytes: toHex(payload), now: pair.now });
+    }
+    // Withhold one data segment in each direction, retaining outstanding data
+    // while both applications independently drain their receive buffers.
+    await pair.step((left, right) => {
+      expect(left).toHaveLength(2);
+      expect(right).toHaveLength(2);
+      return [left.slice(0, 1), right.slice(0, 1)];
+    });
+    await pair.settle();
+    let leftUpdate = new Uint8Array();
+    let rightUpdate = new Uint8Array();
+    for (const size of vector.readChunks) {
+      expect(pair.ts.read(tsId, size, pair.now)).toEqual(new Uint8Array(size).fill(1));
+      expect(fromHex(String(await pair.rustCommand({ op: "read", id: rustId,
+        max: size, now: pair.now })))).toEqual(new Uint8Array(size).fill(1));
+      await pair.step((left, right) => {
+        expect(left).toHaveLength(1);
+        expect(right).toHaveLength(1);
+        leftUpdate = Uint8Array.from(left[0]!);
+        rightUpdate = Uint8Array.from(right[0]!);
+        return [left, right];
+      });
+      expect(await pair.step()).toBe(0);
+    }
+    // True duplicate ACKs still recover the withheld data immediately in both
+    // directions, without a timeout or changing the advertised window.
+    for (let i = 0; i < 3; i += 1) {
+      pair.ts.input("rust", rightUpdate, pair.now);
+      await pair.rustCommand({ op: "input", peer: "ts", bytes: toHex(leftUpdate), now: pair.now });
+    }
+    await pair.settle();
+    const remaining = 16 - vector.readChunks.reduce((a, b) => a + b, 0);
+    const expected = new Uint8Array([...new Uint8Array(remaining).fill(1), ...new Uint8Array(16).fill(2)]);
+    expect(pair.ts.read(tsId, 64, pair.now)).toEqual(expected);
+    expect(fromHex(String(await pair.rustCommand({ op: "read", id: rustId,
+      max: 64, now: pair.now })))).toEqual(expected);
   }, 30_000);
 
   test.each(["TypeScript", "Rust"])("%s initiates a bidirectional shared outage recovery vector", async (initiator) => {
