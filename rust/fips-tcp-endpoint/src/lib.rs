@@ -13,6 +13,9 @@ use fips_core::{
 };
 use fips_tcp::{Config, ConnectionId, MarkerStatus, SendMarker, Stack, StackError, State};
 
+mod peer;
+use peer::PeerKey;
+
 /// Bounded aggregate of one received FIPS service batch.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ReceiveReport {
@@ -39,7 +42,7 @@ pub struct FipsTcpEndpoint {
     endpoint: Arc<FipsEndpoint>,
     receiver: FipsEndpointServiceReceiver,
     fsp_service_port: u16,
-    stack: Stack<String>,
+    stack: Stack<PeerKey>,
     receive_batch: Vec<FipsEndpointServiceDatagram>,
 }
 
@@ -92,7 +95,7 @@ impl FipsTcpEndpoint {
         fsp_service_port: u16,
         config: Config,
         isn_seed: u64,
-    ) -> Result<Stack<String>, AdapterError> {
+    ) -> Result<Stack<PeerKey>, AdapterError> {
         if fsp_service_port == 0 {
             return Err(AdapterError::InvalidServicePort);
         }
@@ -127,7 +130,7 @@ impl FipsTcpEndpoint {
     ) -> Result<ConnectionId, AdapterError> {
         let id = self
             .stack
-            .connect(peer.npub(), self.fsp_service_port, now_ms)?;
+            .connect(peer.into(), self.fsp_service_port, now_ms)?;
         if let Err(error) = self.flush().await {
             // `connect` retained a SYN-SENT entry before emitting its initial
             // segment. If FIPS rejects that segment, the caller never receives
@@ -191,7 +194,7 @@ impl FipsTcpEndpoint {
 
     /// Reclaim all streams for an authenticated peer, including half-open SYNs.
     pub async fn abort_peer(&mut self, peer: PeerIdentity) -> Result<usize, AdapterError> {
-        let count = self.stack.abort_peer(&peer.npub())?;
+        let count = self.stack.abort_peer(&peer.into())?;
         self.flush().await?;
         Ok(count)
     }
@@ -254,7 +257,7 @@ impl FipsTcpEndpoint {
                 continue;
             }
             match self.stack.input(
-                datagram.source_peer.npub(),
+                datagram.source_peer.into(),
                 datagram.data.as_slice(),
                 now_ms,
             ) {
@@ -279,9 +282,7 @@ impl FipsTcpEndpoint {
 
     /// Return the authenticated FIPS identity bound to this stream.
     pub fn peer(&self, id: ConnectionId) -> Option<PeerIdentity> {
-        self.stack
-            .peer(id)
-            .and_then(|npub| PeerIdentity::from_npub(npub).ok())
+        self.stack.peer(id).map(|peer| peer.0)
     }
 
     /// Return the stream's internal `(local, remote)` TCP ports.
@@ -291,10 +292,9 @@ impl FipsTcpEndpoint {
 
     async fn flush(&mut self) -> Result<(), AdapterError> {
         for outbound in self.stack.drain_outbound() {
-            let peer = PeerIdentity::from_npub(&outbound.peer)?;
             self.endpoint
                 .send_datagram(
-                    peer,
+                    outbound.peer.0,
                     self.fsp_service_port,
                     self.fsp_service_port,
                     outbound.bytes,
