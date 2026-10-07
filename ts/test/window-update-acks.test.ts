@@ -35,7 +35,8 @@ test.each(windowUpdateVectors)("$name", (vector) => {
     pair.a.input("b", lastUpdate, pair.now);
     expect(pair.a.drainOutbound(), "window updates must not retransmit data").toHaveLength(0);
   }
-  for (const flag of [Flags.Psh, Flags.Syn, Flags.Fin]) {
+  // Unexpected SYNs are rejected before acknowledgment processing.
+  for (const flag of [Flags.Psh, Flags.Fin]) {
     for (let i = 0; i < (vector.duplicateAcksBeforeRead ?? 0); i += 1) {
       pair.a.input("b", lastUpdate, pair.now);
       expect(pair.a.drainOutbound()).toHaveLength(0);

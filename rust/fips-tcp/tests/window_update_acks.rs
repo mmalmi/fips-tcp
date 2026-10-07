@@ -77,8 +77,9 @@ fn shared_window_update_vectors_do_not_signal_loss_but_duplicate_acks_do() {
                 vector.name
             );
         }
-        // Data and connection-control ACKs also interrupt duplicate ACK runs.
-        for flag in [Flags::PSH, Flags::SYN, Flags::FIN] {
+        // Accepted data and FIN ACKs interrupt duplicate runs. Unexpected SYNs
+        // are rejected by handshake validation before their ACK is processed.
+        for flag in [Flags::PSH, Flags::FIN] {
             for _ in 0..vector.duplicate_acks_before_read {
                 a.input("b".into(), &last_update, 0).unwrap();
                 assert!(a.drain_outbound().is_empty(), "{}", vector.name);

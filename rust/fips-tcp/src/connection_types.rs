@@ -1,4 +1,19 @@
-use crate::wire::Flags;
+use crate::wire::{Flags, Segment};
+
+// Reopening receive capacity is flow control, not evidence of loss. Existing
+// FIPS receivers shrink their window while buffering out-of-order data, so
+// retain those ACKs as loss signals. Compare before updating the remote window.
+pub(crate) fn is_duplicate_ack_candidate(
+    segment: &Segment,
+    send_una: u32,
+    remote_window: usize,
+) -> bool {
+    segment.ack == Some(send_una)
+        && segment.payload.is_empty()
+        && !segment.flags.contains(Flags::SYN)
+        && !segment.flags.contains(Flags::FIN)
+        && usize::from(segment.window) <= remote_window
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct TrackedSegment {

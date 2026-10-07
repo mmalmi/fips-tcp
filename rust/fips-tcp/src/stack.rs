@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
-use crate::connection_types::{ReassemblySegment, TrackedSegment};
+use crate::connection_types::{ReassemblySegment, TrackedSegment, is_duplicate_ack_candidate};
 use crate::marker::{MarkerStatus, SendMarker, SendProgress};
 use crate::reno::Reno;
 use crate::rtt::RttEstimator;
@@ -467,15 +467,7 @@ impl<P: Clone> Connection<P> {
         let mut output = Vec::new();
         if let Some(ack) = segment.ack {
             let previous_una = self.send_una;
-            // Reopening receive capacity is flow control, not evidence of loss.
-            // Existing FIPS receivers reduce the window while buffering
-            // out-of-order data, so retain those ACKs as loss signals.
-            // Compare before applying the newly advertised window.
-            let duplicate = ack == self.send_una
-                && segment.payload.is_empty()
-                && !segment.flags.contains(Flags::SYN)
-                && !segment.flags.contains(Flags::FIN)
-                && usize::from(segment.window) <= self.remote_window;
+            let duplicate = is_duplicate_ack_candidate(segment, self.send_una, self.remote_window);
             let outcome = self.apply_ack(ack, now_ms, duplicate);
             if let Some(retransmit) = outcome.retransmit {
                 output.push(retransmit);

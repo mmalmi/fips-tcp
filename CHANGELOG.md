@@ -1,5 +1,19 @@
 # Changelog
 
+## nvpn-fips-tcp 0.2.4 / @fips/tcp 0.2.3 - 2026-10-08
+
+- Avoid unnecessary retransmission when a receiver advertises more buffer
+  space. Reset the duplicate-acknowledgment count when a window update or
+  data/control acknowledgment interrupts the sequence of loss signals.
+- Preserve shrinking-window loss signals required by deployed FIPS receivers.
+  Document this compatibility difference from standard TCP in the reference.
+- Include the existing fixes for RTT backoff during cumulative recovery and
+  reopening a stream after its reset packet is lost, plus bounded connection
+  reservations for authenticated peers.
+- Verify Rust and TypeScript parity with shared normal/wrapping sequence
+  vectors, live bidirectional interoperability, and a direct smoltcp comparison
+  of window-update and genuine-loss behavior. Preserve the wire format.
+
 ## nvpn-fips-tcp-endpoint 0.2.29 - 2026-10-04
 
 - Require FIPS core 0.4.94 so concurrent discovery requests from distinct
