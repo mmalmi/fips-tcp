@@ -1,5 +1,21 @@
 # Changelog
 
+## nvpn-fips-tcp 0.2.5 / @fips/tcp 0.2.4 - 2026-10-08
+
+- Apply the existing transmission limit to retries triggered by duplicate
+  acknowledgments and duplicate connection requests. Suppressed retries do not
+  extend the timeout, and the final permitted transmission can still be acknowledged.
+- Verify matching Rust and TypeScript behavior with shared sequence-wrap and
+  retry-budget vectors, plus live delivery and continued streaming in both directions.
+
+## nvpn-fips-tcp-endpoint 0.2.30 - 2026-10-08
+
+- Retain authenticated peer identities through TCP processing instead of
+  repeatedly encoding and parsing them for each segment. Preserve canonical
+  identity matching, per-peer limits, and reserved connection classification.
+- Require FIPS core 0.4.95 and TCP core 0.2.5 for bounded idle control handling,
+  acknowledgment recovery, and retransmission attempts. Preserve the TCP/FIPS wire format.
+
 ## nvpn-fips-tcp 0.2.4 / @fips/tcp 0.2.3 - 2026-10-08
 
 - Avoid unnecessary retransmission when a receiver advertises more buffer
