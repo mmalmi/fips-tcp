@@ -8,7 +8,7 @@
 - Verify matching Rust and TypeScript behavior with shared sequence-wrap and
   retry-budget vectors, plus live delivery and continued streaming in both directions.
 
-## nvpn-fips-tcp-endpoint 0.2.30 - 2026-10-08
+## nvpn-fips-tcp-endpoint 0.2.30 - Unreleased
 
 - Retain authenticated peer identities through TCP processing instead of
   repeatedly encoding and parsing them for each segment. Preserve canonical
