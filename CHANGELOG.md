@@ -1,5 +1,10 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.31 - 2026-10-10
+
+- Require FIPS core 0.4.96 for bounded handshake retries and control processing.
+  Preserve TCP core 0.2.5 and the TCP/FIPS wire format.
+
 ## nvpn-fips-tcp 0.2.5 / @fips/tcp 0.2.4 - 2026-10-08
 
 - Apply the existing transmission limit to retries triggered by duplicate
