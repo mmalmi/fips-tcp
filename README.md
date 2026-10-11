@@ -132,6 +132,17 @@ segments within each bounded FIPS receive batch. Its aggregate reports counts
 only; it neither retains attacker-controlled error strings nor logs each bad
 datagram. The compatibility `receive` method returns the total batch count.
 
+Rust callers can use `next_poll_at(now_ms)` on the stack or endpoint to schedule
+the next retransmission, zero-window probe, or closing deadline. An idle stream
+with no pending timer returns `None`; incoming traffic and application work
+still need to be processed immediately.
+
+When selecting between input and other work, select on `wait_for_input()`, then
+process the selected batch outside the cancellable selection. This retains a
+received batch without advancing TCP or interrupting response delivery. Use
+`receive_report_filtered_datagrams_with_clock` to sample the monotonic clock
+after input arrives, so TCP deadlines use the arrival time.
+
 Graceful `close` remains flow-controlled. Protocol owners such as pubsub should
 give it a bounded application shutdown deadline, then call `abort` only when
 that deadline expires. Abort emits one TCP reset and immediately releases the
