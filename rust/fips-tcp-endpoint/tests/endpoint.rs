@@ -436,6 +436,52 @@ async fn filtered_receive_preserves_batch_bound_and_isolates_rejected_and_malfor
 }
 
 #[tokio::test]
+async fn readiness_wait_retains_input_until_selected_receive_processing() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .unwrap(),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).unwrap();
+    let config = Config::default();
+    let rto = config.initial_rto_ms;
+    let mut tcp = FipsTcpEndpoint::bind(endpoint.clone(), FSP_SERVICE_PORT, config, 1)
+        .await
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), tcp.wait_for_input())
+            .await
+            .is_err(),
+        "an empty readiness wait may be cancelled"
+    );
+    send_loopback(&endpoint, local, syn(50_000)).await;
+    tokio::time::timeout(Duration::from_secs(2), tcp.wait_for_input())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        tcp.next_poll_at(10_000),
+        None,
+        "readiness must not process a SYN"
+    );
+    // Selecting another event before processing must not discard a ready batch.
+    tokio::time::timeout(Duration::from_millis(20), tcp.wait_for_input())
+        .await
+        .unwrap()
+        .unwrap();
+    let report = tcp
+        .receive_report_filtered_datagrams_with_clock(|| 10_000, |_, _| true)
+        .await
+        .unwrap();
+    assert_eq!(report.datagrams, 1);
+    assert_eq!(report.processed, 1);
+    assert_eq!(tcp.next_poll_at(10_000), Some(10_000 + rto));
+    endpoint.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn receive_samples_the_clock_after_the_datagram_arrives() {
     let endpoint = Arc::new(
         FipsEndpoint::builder()

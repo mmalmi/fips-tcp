@@ -208,6 +208,21 @@ impl FipsTcpEndpoint {
         self.flush().await
     }
 
+    /// Wait for a bounded input batch without advancing TCP or sending packets.
+    ///
+    /// This wait is cancellation safe and retains the batch until a receive
+    /// method processes it. Event loops can select this readiness future, then
+    /// process the selected receive outside the cancellable selection.
+    pub async fn wait_for_input(&mut self) -> Result<(), AdapterError> {
+        if self.receive_batch.is_empty() {
+            self.receiver
+                .recv_batch_into(&mut self.receive_batch, 64)
+                .await
+                .ok_or(AdapterError::Closed)?;
+        }
+        Ok(())
+    }
+
     /// Await one FIPS service batch and return its datagram count.
     ///
     /// Individual invalid or over-capacity segments are isolated within the
@@ -259,11 +274,8 @@ impl FipsTcpEndpoint {
         clock: impl FnOnce() -> u64,
         mut admitted: impl FnMut(&PeerIdentity, &[u8]) -> bool,
     ) -> Result<ReceiveReport, AdapterError> {
-        let count = self
-            .receiver
-            .recv_batch_into(&mut self.receive_batch, 64)
-            .await
-            .ok_or(AdapterError::Closed)?;
+        self.wait_for_input().await?;
+        let count = self.receive_batch.len();
         let now_ms = clock();
         let mut report = ReceiveReport {
             datagrams: count,
