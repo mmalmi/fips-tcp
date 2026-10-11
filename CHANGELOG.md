@@ -1,5 +1,10 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.33 - 2026-10-12
+
+- Use FIPS core 0.4.98 to avoid discovery timer wakeups when no event is pending.
+  Preserve TCP core 0.2.6 and the TCP/FIPS wire format.
+
 ## nvpn-fips-tcp-endpoint 0.2.31 - 2026-10-10
 
 - Require FIPS core 0.4.96 for bounded handshake retries and control processing.
