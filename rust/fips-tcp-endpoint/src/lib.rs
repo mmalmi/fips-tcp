@@ -197,6 +197,12 @@ impl FipsTcpEndpoint {
         Ok(count)
     }
 
+    /// Earliest TCP timer deadline, using the clock supplied to stream operations.
+    /// Recompute after every operation; `None` means no timer is needed.
+    pub fn next_poll_at(&self, now_ms: u64) -> Option<u64> {
+        self.stack.next_poll_at(now_ms)
+    }
+
     pub async fn poll(&mut self, now_ms: u64) -> Result<(), AdapterError> {
         self.stack.poll(now_ms);
         self.flush().await
@@ -237,6 +243,20 @@ impl FipsTcpEndpoint {
     pub async fn receive_report_filtered_datagrams(
         &mut self,
         now_ms: u64,
+        admitted: impl FnMut(&PeerIdentity, &[u8]) -> bool,
+    ) -> Result<ReceiveReport, AdapterError> {
+        self.receive_report_filtered_datagrams_with_clock(|| now_ms, admitted)
+            .await
+    }
+
+    /// Like `receive_report_filtered_datagrams`, sampling time after the wait.
+    ///
+    /// Use this in event loops that may wait indefinitely for input. The injected
+    /// clock is called once per received batch, immediately before TCP processing,
+    /// so retransmission deadlines and RTT samples use arrival rather than wait time.
+    pub async fn receive_report_filtered_datagrams_with_clock(
+        &mut self,
+        clock: impl FnOnce() -> u64,
         mut admitted: impl FnMut(&PeerIdentity, &[u8]) -> bool,
     ) -> Result<ReceiveReport, AdapterError> {
         let count = self
@@ -244,6 +264,7 @@ impl FipsTcpEndpoint {
             .recv_batch_into(&mut self.receive_batch, 64)
             .await
             .ok_or(AdapterError::Closed)?;
+        let now_ms = clock();
         let mut report = ReceiveReport {
             datagrams: count,
             ..ReceiveReport::default()

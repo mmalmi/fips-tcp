@@ -435,6 +435,50 @@ async fn filtered_receive_preserves_batch_bound_and_isolates_rejected_and_malfor
     endpoint.shutdown().await.expect("shutdown endpoint");
 }
 
+#[tokio::test]
+async fn receive_samples_the_clock_after_the_datagram_arrives() {
+    let endpoint = Arc::new(
+        FipsEndpoint::builder()
+            .without_system_tun()
+            .bind()
+            .await
+            .unwrap(),
+    );
+    let local = PeerIdentity::from_npub(endpoint.npub()).unwrap();
+    let config = Config::default();
+    let rto = config.initial_rto_ms;
+    let mut tcp = FipsTcpEndpoint::bind(endpoint.clone(), FSP_SERVICE_PORT, config, 1)
+        .await
+        .unwrap();
+    let clock = std::cell::Cell::new(0);
+    let samples = std::cell::Cell::new(0);
+    {
+        let mut receive = Box::pin(tcp.receive_report_filtered_datagrams_with_clock(
+            || {
+                samples.set(samples.get() + 1);
+                clock.get()
+            },
+            |_, _| true,
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut receive)
+                .await
+                .is_err()
+        );
+        assert_eq!(samples.get(), 0, "pending receive must not sample time");
+        clock.set(12_340);
+        send_loopback(&endpoint, local, syn(50_000)).await;
+        let report = tokio::time::timeout(Duration::from_secs(2), receive)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(report.processed, 1);
+    }
+    assert_eq!(samples.get(), 1);
+    assert_eq!(tcp.next_poll_at(clock.get()), Some(clock.get() + rto));
+    endpoint.shutdown().await.unwrap();
+}
+
 async fn send_loopback(endpoint: &FipsEndpoint, local: PeerIdentity, bytes: Vec<u8>) {
     endpoint
         .send_datagram(local, FSP_SERVICE_PORT, FSP_SERVICE_PORT, bytes)

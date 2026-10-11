@@ -16,6 +16,7 @@ include!("stack_abort.rs");
 include!("connection_reset.rs");
 include!("connection_recovery.rs");
 include!("stack_marker.rs");
+include!("stack_poll.rs");
 
 pub struct Stack<P> {
     config: Config,
@@ -560,74 +561,6 @@ impl<P: Clone> Connection<P> {
             },
             _ => Update::open(Vec::new()),
         }
-    }
-
-    fn poll(&mut self, now_ms: u64, config: &Config) -> Update {
-        let close_expired = match self.state {
-            State::FinWait2 => self.fin_wait_2_until_ms,
-            State::TimeWait => self.time_wait_until_ms,
-            _ => None,
-        }
-        .is_some_and(|deadline| now_ms >= deadline);
-        if close_expired {
-            return Update {
-                segments: Vec::new(),
-                accepted: false,
-                closed: true,
-            };
-        }
-        let mut segments = Vec::new();
-        let zero_window_work = self.close_requested
-            || !self.send_queue.is_empty()
-            || self
-                .unacked
-                .iter()
-                .any(|segment| !segment.payload.is_empty());
-        if self.remote_window == 0 && zero_window_work {
-            let deadline = self
-                .next_zero_window_probe_ms
-                .get_or_insert(now_ms.saturating_add(config.initial_rto_ms));
-            if now_ms >= *deadline {
-                if self.zero_window_probes >= config.max_retransmissions {
-                    return Update {
-                        segments,
-                        accepted: false,
-                        closed: true,
-                    };
-                }
-                if let Some(probe) = self.zero_window_probe(now_ms, config) {
-                    segments.push(probe);
-                    self.zero_window_probes = self.zero_window_probes.saturating_add(1);
-                    let shift = u32::from(self.zero_window_probes.min(16));
-                    let delay = config
-                        .initial_rto_ms
-                        .saturating_mul(1_u64 << shift)
-                        .min(config.max_rto_ms);
-                    self.next_zero_window_probe_ms = Some(now_ms.saturating_add(delay));
-                }
-            }
-            return Update::open(segments);
-        }
-        if let Some(oldest) = self.unacked.front()
-            && now_ms >= oldest.sent_at_ms.saturating_add(self.rtt.timeout_ms())
-        {
-            if oldest.transmissions >= config.max_retransmissions {
-                return Update {
-                    segments,
-                    accepted: false,
-                    closed: true,
-                };
-            }
-            let in_flight = distance(self.send_una, self.send_nxt);
-            self.rto_recovery_until.get_or_insert(self.send_nxt);
-            self.reno.on_timeout(in_flight);
-            self.rtt.on_timeout();
-            if let Some(retransmit) = self.retransmit_oldest(now_ms, true) {
-                segments.push(retransmit);
-            }
-        }
-        segments.extend(self.flush_data(now_ms, config));
-        Update::open(segments)
     }
 
     fn apply_ack(&mut self, ack: u32, now_ms: u64, duplicate_candidate: bool) -> AckOutcome {
