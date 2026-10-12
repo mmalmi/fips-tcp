@@ -1,5 +1,10 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.34 - 2026-10-13
+
+- Use FIPS core 0.4.99 so applications can provide protected carrier sockets and
+  host name resolution. Preserve TCP core 0.2.6 and the TCP/FIPS wire format.
+
 ## nvpn-fips-tcp-endpoint 0.2.33 - 2026-10-12
 
 - Use FIPS core 0.4.98 to avoid discovery timer wakeups when no event is pending.

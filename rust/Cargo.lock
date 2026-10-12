@@ -1263,21 +1263,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
 
 [[package]]
-name = "mdns-sd"
-version = "0.19.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18148fee27e99e76dbf6e137f27727113d31f766e578d1b93a93c3615fca7081"
-dependencies = [
- "fastrand",
- "flume",
- "if-addrs",
- "log",
- "mio",
- "socket-pktinfo",
- "socket2",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1523,10 +1508,11 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-core"
-version = "0.4.98"
+version = "0.4.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfc0ce447dbc13c9bb2bf31f20292b132edf0dba832b7bdeb475fd3335e8be6d"
+checksum = "70618a01623070082b36578f40f85a082982b818a31e8e45fc2535be31f2d591"
 dependencies = [
+ "async-wsocket",
  "base64",
  "bluer",
  "dirs",
@@ -1534,13 +1520,13 @@ dependencies = [
  "hex",
  "hkdf",
  "libc",
- "mdns-sd",
  "netlink-packet-core",
  "netlink-packet-netfilter",
  "netlink-sys",
  "nostr",
  "nostr-sdk",
  "nvpn-fips-identity",
+ "nvpn-mdns-sd",
  "portable-atomic",
  "procfs",
  "rand 0.10.2",
@@ -1551,7 +1537,7 @@ dependencies = [
  "secp256k1 0.30.0",
  "serde",
  "serde_json",
- "serde_yaml",
+ "serde_norway",
  "sha2",
  "simple-dns",
  "socket2",
@@ -1592,11 +1578,26 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-tcp-endpoint"
-version = "0.2.33"
+version = "0.2.34"
 dependencies = [
  "nvpn-fips-core",
  "nvpn-fips-tcp",
  "tokio",
+]
+
+[[package]]
+name = "nvpn-mdns-sd"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "261987265d4e6d51808a6cd45b467ca0e31d161a12969819558b95ca0a922df0"
+dependencies = [
+ "fastrand",
+ "flume",
+ "if-addrs",
+ "log",
+ "mio",
+ "socket-pktinfo",
+ "socket2",
 ]
 
 [[package]]
@@ -2016,9 +2017,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.42"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c54fcab019b409d04215d3a17cb438fd7fbf192ee61461f20f4fe18704bc138"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "once_cell",
  "ring",
@@ -2039,9 +2040,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -2168,16 +2169,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
+name = "serde_norway"
+version = "0.9.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+checksum = "e408f29489b5fd500fab51ff1484fc859bb655f32c671f307dcd733b72e8168c"
 dependencies = [
  "indexmap",
  "itoa",
  "ryu",
  "serde",
- "unsafe-libyaml",
+ "unsafe-libyaml-norway",
 ]
 
 [[package]]
@@ -2653,10 +2654,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
+name = "unsafe-libyaml-norway"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+checksum = "b39abd59bf32521c7f2301b52d05a6a2c975b6003521cbd0c6dc1582f0a22104"
 
 [[package]]
 name = "untrusted"
