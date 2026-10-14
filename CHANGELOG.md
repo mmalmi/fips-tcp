@@ -1,5 +1,11 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.35 - 2026-10-14
+
+- Use FIPS core 0.4.100 for lower mobile idle work, ordered startup delivery,
+  and preservation of incoming packets during successful or failed sends.
+  Preserve TCP core 0.2.6 and the TCP/FIPS wire format.
+
 ## nvpn-fips-tcp-endpoint 0.2.34 - 2026-10-13
 
 - Use FIPS core 0.4.99 so applications can provide protected carrier sockets and
