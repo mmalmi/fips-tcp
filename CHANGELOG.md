@@ -1,5 +1,11 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.36 - 2026-10-14
+
+- Use FIPS core 0.4.101 for confirmed fallback recovery after a lost initial UDP
+  handshake reply and to retain received packets across bounded processing turns.
+  Preserve TCP core 0.2.6 and the TCP/FIPS wire format.
+
 ## nvpn-fips-tcp-endpoint 0.2.35 - 2026-10-14
 
 - Use FIPS core 0.4.100 for lower mobile idle work, ordered startup delivery,
