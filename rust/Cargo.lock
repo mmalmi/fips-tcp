@@ -1297,9 +1297,9 @@ dependencies = [
 
 [[package]]
 name = "negentropy"
-version = "0.5.0"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0efe882e02d206d8d279c20eb40e03baf7cb5136a1476dc084a324fbc3ec42d"
+checksum = "a3d66662cb5ca384d4991509755ed5a42dd8e31c4282bf881938e506fc3146ec"
 
 [[package]]
 name = "netlink-packet-core"
@@ -1508,9 +1508,9 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-core"
-version = "0.4.101"
+version = "0.4.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8af196fafd9767f09662c9b55e34e8ac9c0fa728e479d9c91e1bf431d33aa64"
+checksum = "c58a4c7ce92986b59b78cd51d5a60795d345a656661e5366b54f2295fccef115"
 dependencies = [
  "async-wsocket",
  "base64",
@@ -1578,7 +1578,7 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-tcp-endpoint"
-version = "0.2.36"
+version = "0.2.37"
 dependencies = [
  "nvpn-fips-core",
  "nvpn-fips-tcp",

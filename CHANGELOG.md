@@ -1,5 +1,10 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.37 - 2026-10-17
+
+- Use FIPS core 0.4.102 for negotiated client-only routing and older-peer
+  compatibility. Preserve TCP core 0.2.6 and the TCP/FIPS wire format.
+
 ## nvpn-fips-tcp-endpoint 0.2.36 - 2026-10-14
 
 - Use FIPS core 0.4.101 for confirmed fallback recovery after a lost initial UDP
