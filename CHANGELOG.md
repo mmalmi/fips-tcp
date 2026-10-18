@@ -1,5 +1,11 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.38 - 2026-10-18
+
+- Use FIPS core 0.4.103 for routing-role status, recovery from lost initial
+  connection messages, and reuse of successful discovery signature checks.
+  Preserve TCP core 0.2.6 and the TCP/FIPS wire format.
+
 ## nvpn-fips-tcp-endpoint 0.2.37 - 2026-10-17
 
 - Use FIPS core 0.4.102 for negotiated client-only routing and older-peer
