@@ -10,10 +10,11 @@ pub(super) struct PeerKey(pub(super) PeerIdentity);
 impl From<PeerIdentity> for PeerKey {
     fn from(peer: PeerIdentity) -> Self {
         // The former npub round trip selected even parity. Preserve that
-        // behavior for callers with a full odd-parity key, without rebuilding
-        // the curve point for identities that are already canonical.
-        let peer = if peer.pubkey_full().serialize()[0] == 3 {
-            PeerIdentity::from_pubkey(peer.pubkey())
+        // behavior using the already authenticated curve point. Negating an
+        // odd point avoids decompressing its x coordinate on every segment.
+        let full = peer.pubkey_full();
+        let peer = if full.serialize()[0] == 3 {
+            PeerIdentity::from_pubkey_full(full.negate(secp256k1::SECP256K1))
         } else {
             peer
         };

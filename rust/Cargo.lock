@@ -1582,6 +1582,7 @@ version = "0.2.38"
 dependencies = [
  "nvpn-fips-core",
  "nvpn-fips-tcp",
+ "secp256k1",
  "tokio",
 ]
 
