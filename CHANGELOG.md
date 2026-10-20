@@ -1,5 +1,10 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.42 - 2026-10-21
+
+- Use FIPS core 0.4.107 for authenticated Bluetooth identity reconnection.
+  Keep TCP core 0.2.6 and the wire format.
+
 ## nvpn-fips-tcp-endpoint 0.2.41 - 2026-10-18
 
 - Use FIPS core 0.4.106 to retain the refreshed WebRTC and mDNS fixes alongside
