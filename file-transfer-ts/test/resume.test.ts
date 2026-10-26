@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import type { FipsDatagramEndpoint, FipsServiceContext } from '@fips/tcp'
+import { Segment, type FipsDatagramEndpoint, type FipsServiceContext } from '@fips/tcp'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { DirectFileTcp, manifestDigest, prefixDigest, type DirectFileStateStore, type DirectFileClaim,
-  type DirectFileEvent, type DirectFileSink, type DirectFileSource } from '../src/index.js'
+import { DIRECT_FILE_PORT, DirectFileTcp, manifestDigest, prefixDigest, type DirectFileStateStore, type DirectFileClaim,
+  type DirectFileEvent, type DirectFileSink, type DirectFileSource, type DirectFileTcpOptions } from '../src/index.js'
 import { verificationDeadline } from '../src/work.js'
 import { pendingControl, parseControl, toHex } from '../src/wire.js'
 const vectors = JSON.parse(readFileSync(new URL('../../protocol/file-transfer-v2-vectors.json', import.meta.url), 'utf8'))
@@ -49,10 +49,11 @@ class Endpoint implements FipsDatagramEndpoint {
 const peers = ['a', 'b', 'c'].map(c => c.repeat(64)), token = '9'.repeat(64)
 let network = new Map<string, Endpoint>()
 const engines: DirectFileTcp[] = []
-function device(index: number, store: Store, disk = new Disk()) {
+function device(index: number, store: Store, disk = new Disk(), now?: () => number,
+  authorizeOffer?: DirectFileTcpOptions['authorizeOffer']) {
   const endpoint = new Endpoint(peers[index]), events: DirectFileEvent[] = []
   const engine = new DirectFileTcp({ endpoint, localPeer: endpoint.id, store,
-    createReceiveFile: (id, i) => disk.sink(id, i), onEvent: e => events.push(e), isnSeed: index + engines.length + 1 })
+    createReceiveFile: (id, i) => disk.sink(id, i), onEvent: e => events.push(e), isnSeed: index + engines.length + 1, now, authorizeOffer })
   engines.push(engine)
   return { engine, endpoint, events, disk }
 }
@@ -106,6 +107,88 @@ it('resumes a durable prefix across both process restarts and claims only one re
   await until(() => b.events.filter(e => e.type === 'completed').length === 2)
   expect(disk.writes).toBe(writes)
   expect(disk.commits.size).toBe(1)
+})
+
+it('preserves a resumed prefix while the sender still has an old stream for the same peer', async () => {
+  const senderStore = new Store(), receiverStore = new Store(), disk = new Disk()
+  const bytes = Uint8Array.from({ length: 400_123 }, (_, i) => i % 251), files = [source('stale.bin', bytes)]
+  let receiverAdvance = 0, oldPort: number | undefined, isolateOldStream = false
+  const a = device(0, senderStore), b = device(1, receiverStore, disk, () => Date.now() + receiverAdvance)
+  const sendFromA = a.endpoint.sendDatagram.bind(a.endpoint), sendFromB = b.endpoint.sendDatagram.bind(b.endpoint)
+  a.endpoint.sendDatagram = async args => {
+    if (isolateOldStream && args.dst.slice(2) === peers[1] && Segment.decode(args.payload).dstPort === oldPort) return
+    await sendFromA(args)
+  }
+  b.endpoint.sendDatagram = async args => {
+    const port = Segment.decode(args.payload).srcPort
+    oldPort ??= port
+    if (isolateOldStream && port === oldPort) return
+    await sendFromB(args)
+  }
+  a.engine.registerOffer('stale', token, [peers[1], peers[2]], files, { version: 2 })
+  await b.engine.receive('stale', token, peers[0], files, { version: 2 })
+  await until(() => (disk.files.get(0)?.length ?? 0) >= 65_536)
+  const retained = disk.files.get(0)!.slice()
+  expect(retained.length).toBeLessThan(bytes.length)
+
+  // Only the receiver notices this stream's interruption. Its reset is lost,
+  // while new streams can reach the sender before the old one times out.
+  isolateOldStream = true; receiverAdvance = 61_000
+  await until(() => b.events.filter(e => e.type === 'paused').length === 1)
+  expect(event(a.events, 'paused')).toBeUndefined()
+  await b.engine.receive('stale', token, peers[0], files, { version: 2 })
+  await until(() => b.events.filter(e => e.type === 'paused').length === 2)
+  expect(disk.files.get(0)).toEqual(retained)
+  expect(receiverStore.claims.get('receive/stale')?.status).toBe('claimed')
+  expect(senderStore.claims.get('send/stale')?.status).toBe('claimed')
+  expect(b.events.some(e => e.type === 'failed' || e.type === 'cancelled')).toBe(false)
+
+  const other = device(2, new Store())
+  await other.engine.receive('stale', token, peers[0], files, { version: 2 })
+  await until(() => !!event(other.events, 'failed'))
+  expect(other.disk.files.size).toBe(0)
+  expect(senderStore.claims.get('send/stale')?.peer).toBe(peers[1])
+
+  await until(() => !!event(a.events, 'paused'), 65_000)
+  isolateOldStream = false
+  await b.engine.receive('stale', token, peers[0], files, { version: 2 })
+  await until(() => !!event(a.events, 'completed') && !!event(b.events, 'completed'))
+  expect(event(a.events, 'accepted')?.transferredBytes).toBe(retained.length)
+  expect(disk.files.get(0)).toEqual(bytes)
+  expect(senderStore.claims.get('send/stale')?.status).toBe('completed')
+  expect(receiverStore.claims.get('receive/stale')?.status).toBe('completed')
+}, 15_000)
+
+it('accepts an authorized in-band offer before its delayed offer receipt arrives', async () => {
+  const bytes = Uint8Array.from({ length: 400_123 }, (_, i) => i % 251), files = [source('immediate.bin', bytes)]
+  const a = device(0, new Store())
+  let receiving: Promise<void> | undefined, releaseReceipt = false
+  const b = device(1, new Store(), new Disk(), undefined, offer => {
+    if (offer.peer !== peers[0]) return false
+    receiving = b.engine.receive(offer.id, offer.token, offer.peer, offer.files, { version: 2 })
+    return true
+  })
+  const sendFromB = b.endpoint.sendDatagram.bind(b.endpoint)
+  const held: Parameters<typeof sendFromB>[0][] = []
+  b.endpoint.sendDatagram = async args => {
+    const segment = Segment.decode(args.payload)
+    if (!releaseReceipt && segment.srcPort === DIRECT_FILE_PORT && segment.payload.length) {
+      held.push(args)
+      return
+    }
+    await sendFromB(args)
+  }
+  await a.engine.announceOffer('immediate', token, peers[1], files)
+  await until(() => !!event(a.events, 'accepted'))
+  await receiving
+  expect(held.length).toBeGreaterThan(0)
+  releaseReceipt = true
+  for (const args of held) await sendFromB(args)
+  await until(() => !!event(a.events, 'completed') && !!event(b.events, 'completed'))
+  expect(b.disk.files.get(0)).toEqual(bytes)
+  const accepted = a.events.findIndex(e => e.type === 'accepted')
+  expect(a.events.slice(accepted + 1).some(e => e.type === 'offered')).toBe(false)
+  expect([...a.events, ...b.events].some(e => e.type === 'failed' || e.type === 'paused')).toBe(false)
 })
 
 it('rejects a corrupted retained prefix without emitting additional source bytes', async () => {

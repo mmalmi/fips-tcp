@@ -128,7 +128,12 @@ impl Runtime {
                 c.role = Role::Finish;
             }
             Control::Offered { id } if matches!(c.role, Role::Announcing) && id == c.id => {
-                if let Some(r) = self.store.records.get(&id).cloned() {
+                if let Some(mut r) = self.store.records.get(&id).cloned() {
+                    // Acceptance on a new stream can beat this offer receipt.
+                    if r.status == TransferStatus::Transferring || r.status.terminal() {
+                        c.role = Role::Finish;
+                        return Ok(());
+                    }
                     r.status = TransferStatus::Offered;
                     r.error = None;
                     self.store.put(r.clone())?;
@@ -217,9 +222,16 @@ impl Runtime {
                 {
                     return self.reject(c, id, Rejection::Mismatch);
                 }
-                if self.connections.values().any(|other| {
+                if let Some(other) = self.connections.values().find(|other| {
                     other.id == id && (matches!(other.role, Role::Sending) || other.work.is_some())
                 }) {
+                    if other.peer.pubkey() == c.peer.pubkey() {
+                        // A restarted receiver can reconnect before its old stream
+                        // closes. Close only this unbound stream so its durable
+                        // prefix stays resumable instead of rejecting the offer.
+                        c.role = Role::Finish;
+                        return Ok(());
+                    }
                     return self.reject(c, id, Rejection::Unavailable);
                 }
                 c.id = id;
@@ -294,6 +306,14 @@ impl Runtime {
                 c.role = Role::Finish;
             }
             Control::Cancel if !c.id.is_empty() => {
+                if self
+                    .store
+                    .records
+                    .get(&c.id)
+                    .is_some_and(|r| r.status.terminal())
+                {
+                    return Ok(());
+                }
                 self.terminal(&c.id, TransferStatus::Cancelled, None)?;
                 self.emit(TransferEvent::Cancelled {
                     transfer_id: c.id.clone(),

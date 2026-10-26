@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::{
     fs,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
+    sync::{Condvar, Mutex},
     time::Duration,
 };
 
@@ -682,6 +683,140 @@ async fn completed_receipt_replays_without_source_or_duplicate_output() {
     a.stop().await;
     b.stop().await;
 }
+struct BlockedDestination {
+    inner: Arc<dyn Destination>,
+    started: flume::Sender<()>,
+    released: Mutex<bool>,
+    ready: Condvar,
+}
+impl BlockedDestination {
+    fn release(&self) {
+        *self.released.lock().unwrap() = true;
+        self.ready.notify_all();
+    }
+}
+impl Destination for BlockedDestination {
+    fn prepare(&self, id: String, files: Vec<ManifestFile>) -> Result<()> {
+        self.started.send(()).map_err(|e| e.to_string())?;
+        let released = self.released.lock().map_err(|e| e.to_string())?;
+        let (released, _) = self
+            .ready
+            .wait_timeout_while(released, Duration::from_secs(20), |released| !*released)
+            .map_err(|e| e.to_string())?;
+        if !*released {
+            return Err("Test export was not released".into());
+        }
+        drop(released);
+        self.inner.prepare(id, files)
+    }
+    fn write(&self, index: u32, bytes: Vec<u8>) -> Result<()> {
+        self.inner.write(index, bytes)
+    }
+    fn finish_file(&self, index: u32) -> Result<()> {
+        self.inner.finish_file(index)
+    }
+    fn commit(&self) -> Result<Vec<String>> {
+        self.inner.commit()
+    }
+    fn abort(&self) {
+        self.inner.abort();
+    }
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn local_cancel_during_verified_export_preserves_completion() {
+    let (a, b) = pair().await;
+    let source_dir = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let bytes = b"verified files still belong to the receiver";
+    let files = vec![source(source_dir.path(), "verified.txt", bytes)];
+    let (started_tx, started) = flume::bounded(1);
+    let destination = Arc::new(BlockedDestination {
+        inner: directory_destination(output.path().into()),
+        started: started_tx,
+        released: Mutex::new(false),
+        ready: Condvar::new(),
+    });
+    a.sender
+        .register_offer(
+            "export-cancel".into(),
+            TOKEN.into(),
+            vec![b.identity],
+            files.clone(),
+        )
+        .unwrap();
+    b.sender
+        .receive_into(
+            "export-cancel".into(),
+            TOKEN.into(),
+            a.identity,
+            files,
+            destination.clone(),
+            true,
+        )
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(20), started.recv_async())
+        .await
+        .expect("Verified export did not start")
+        .unwrap();
+    b.sender.cancel("export-cancel").unwrap();
+    b.sender.cancel("export-cancel").unwrap();
+    b.sender
+        .register_offer(
+            "cancel-barrier".into(),
+            TOKEN.into(),
+            vec![a.identity],
+            vec![source(source_dir.path(), "barrier.txt", b"x")],
+        )
+        .unwrap();
+    b.sender.cancel("cancel-barrier").unwrap();
+    // The FIFO barrier proves both earlier cancels were processed while export
+    // was blocked, without depending on a sleep or snapshot polling interval.
+    let cancelled = b
+        .event(|e| matches!(e, TransferEvent::Cancelled { .. }))
+        .await;
+    assert!(
+        matches!(cancelled, TransferEvent::Cancelled { transfer_id, .. } if transfer_id == "cancel-barrier")
+    );
+    destination.release();
+    let completed = b
+        .event(|e| {
+            matches!(
+                e,
+                TransferEvent::Completed { .. }
+                    | TransferEvent::Failed { .. }
+                    | TransferEvent::Cancelled { .. }
+                    | TransferEvent::Paused { .. }
+            )
+        })
+        .await;
+    let TransferEvent::Completed {
+        transfer_id,
+        local_paths,
+        ..
+    } = completed
+    else {
+        panic!("{completed:?}")
+    };
+    assert_eq!(transfer_id, "export-cancel");
+    assert_eq!(local_paths.len(), 1);
+    assert_eq!(fs::read(&local_paths[0]).unwrap(), bytes);
+    let completed = a
+        .event(|e| {
+            matches!(
+                e,
+                TransferEvent::Completed { .. }
+                    | TransferEvent::Failed { .. }
+                    | TransferEvent::Cancelled { .. }
+            )
+        })
+        .await;
+    assert!(
+        matches!(completed, TransferEvent::Completed { transfer_id, .. } if transfer_id == "export-cancel")
+    );
+    a.stop().await;
+    b.stop().await;
+}
+
 struct FailedDestination;
 impl Destination for FailedDestination {
     fn prepare(&self, _: String, _: Vec<ManifestFile>) -> Result<()> {
@@ -770,8 +905,20 @@ async fn in_band_offers_default_deny_then_require_consent() {
     b.sender
         .accept("allowed", directory_destination(output.path().into()))
         .unwrap();
-    b.event(|e| matches!(e, TransferEvent::Completed { .. }))
+    let outcome = b
+        .event(|e| {
+            matches!(
+                e,
+                TransferEvent::Completed { .. }
+                    | TransferEvent::Failed { .. }
+                    | TransferEvent::Paused { .. }
+            )
+        })
         .await;
+    assert!(
+        matches!(outcome, TransferEvent::Completed { .. }),
+        "{outcome:?}"
+    );
     a.stop().await;
     b.stop().await;
 }

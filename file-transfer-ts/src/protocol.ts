@@ -36,7 +36,10 @@ export async function handlePacket(r: Runtime, c: Connection, packet: Uint8Array
   }
   if (control.type === 'offered' && c.role.kind === 'announce' && control.id === c.transferId) {
     c.terminal = true
-    emit(r, { type: 'offered', transferId: c.transferId, peer: c.peer })
+    const active = [...r.connections.values()].some(other => other !== c && other.transferId === c.transferId &&
+      !other.terminal && (other.role.kind === 'sending' || other.work))
+    const claim = await r.options.store?.load(`send/${c.transferId}`)
+    if (!active && (!claim || claim.status === 'claimed')) emit(r, { type: 'offered', transferId: c.transferId, peer: c.peer })
     return false
   }
   if (control.type === 'rejected' && control.id === c.transferId) {
@@ -56,7 +59,14 @@ export async function handlePacket(r: Runtime, c: Connection, packet: Uint8Array
         claim.peer !== c.peer || claim.status === 'cancelled' || claim.status === 'declined')) return reject(c, control.id, 'unavailable')
       if (claim && claim.expires <= r.now()) return reject(c, control.id, 'expired')
     }
-    if ([...r.connections.values()].some(other => other !== c && other.transferId === control.id && !other.terminal)) {
+    const active = [...r.connections.values()].filter(other => other !== c && other.transferId === control.id &&
+      !other.terminal && (other.role.kind === 'sending' || other.work))
+    if (active.length) {
+      if (control.type === 'resume' && offer.version === 2 && active.every(other => other.peer === c.peer)) {
+        // A stale stream may outlive its receiver. Leave this new stream unbound
+        // and close it so the receiver retains its durable prefix for another try.
+        return false
+      }
       return reject(c, control.id, 'unavailable')
     }
     if (control.type === 'resume') {

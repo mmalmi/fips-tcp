@@ -4,6 +4,8 @@ use crate::{
     *,
 };
 mod protocol;
+#[cfg(test)]
+mod tests;
 mod work;
 
 use fips_tcp::{ConnectionId, MarkerStatus, SendMarker, State};
@@ -186,7 +188,11 @@ impl Runtime {
         if self.connections.len() + self.local_work.len() >= MAX_TRANSFERS {
             return Err("Too many file transfers".into());
         }
-        if self.connections.values().any(|c| c.id == id) || self.local_work.contains_key(id) {
+        if self.connections.values().any(|c| {
+            c.id == id
+                && (!matches!(c.role, Role::Finish) || c.completion.is_some() || c.work.is_some())
+        }) || self.local_work.contains_key(id)
+        {
             return Err("File transfer is already active".into());
         }
         let mut r = self
@@ -471,6 +477,14 @@ impl Runtime {
                 self.connections.insert(stream, c);
             }
             Command::Cancel(id) => {
+                if self
+                    .store
+                    .records
+                    .get(&id)
+                    .is_some_and(|r| r.status.terminal())
+                {
+                    return Ok(());
+                }
                 let peer = self
                     .store
                     .records
@@ -529,7 +543,7 @@ impl Runtime {
                 }
             }
         }
-        if state == State::CloseWait && !matches!(c.role, Role::Finish) {
+        if state == State::CloseWait && !matches!(c.role, Role::Finish | Role::Declining) {
             return Err("transport: File connection closed before completion".into());
         }
         if c.pending.as_ref().is_some_and(|p| {
