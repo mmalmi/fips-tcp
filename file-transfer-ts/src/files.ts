@@ -1,4 +1,5 @@
 // Extracted from Iris Chat (MIT), Copyright Iris Chat contributors.
+import { abortable } from './work.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { DIRECT_FILE_CHUNK_BYTES, toHex } from './wire.js'
 import type { DirectFileResult, DirectFileSink, DirectFileSource, DirectFileSpec, DirectFileTcpOptions } from './types.js'
@@ -45,17 +46,21 @@ export class ReceiveFiles {
   constructor(readonly id: string, readonly files: DirectFileSpec[], private readonly options: DirectFileTcpOptions) {
     this.total = files.reduce((n, f) => n + f.sizeBytes, 0)
   }
-  async restore(): Promise<string> {
+  async restore(signal?: AbortSignal): Promise<string> {
     let incomplete = false
     for (const [index, file] of this.files.entries()) {
+      signal?.throwIfAborted()
       const sink = await this.sink(index)
+      signal?.throwIfAborted()
       if (!sink.suspend) throw new Error('This destination cannot resume file transfers')
       const retained = sink.retained
       if ((retained?.size ?? 0) > file.sizeBytes || (incomplete && retained?.size)) throw new Error('Invalid retained file prefix')
       if (incomplete) continue
       const count = retained?.size ?? 0
       if (retained) for (let offset = 0; offset < count; offset += DIRECT_FILE_CHUNK_BYTES) {
-        const bytes = new Uint8Array(await retained.slice(offset, offset + DIRECT_FILE_CHUNK_BYTES).arrayBuffer())
+        signal?.throwIfAborted()
+        const bytes = new Uint8Array(await abortable(retained.slice(offset, offset + DIRECT_FILE_CHUNK_BYTES).arrayBuffer(), signal))
+        if (offset && offset % (1024 * 1024) === 0) await abortable(new Promise<void>(resolve => setTimeout(resolve, 0)), signal)
         this.hash.update(bytes); this.prefix.update(bytes)
       }
       this.offset = count; this.transferred += count
@@ -96,13 +101,15 @@ export class ReceiveFiles {
       await this.advance()
     }
   }
-  async commit(): Promise<DirectFileResult[]> {
+  async commit(signal?: AbortSignal): Promise<DirectFileResult[]> {
     await this.advance()
     if (this.index !== this.files.length) throw new Error('File transfer ended before all files arrived')
     for (const [index, sink] of this.sinks.entries()) {
-      if (sink.commit) this.results[index].blob = await sink.commit()
+      signal?.throwIfAborted()
+      if (sink.commit) this.results[index].blob = await sink.commit(signal)
       if (this.results[index].blob?.size !== this.files[index].sizeBytes) throw new Error('Received file was not saved completely')
     }
+    signal?.throwIfAborted()
     this.committed = true
     return this.results
   }

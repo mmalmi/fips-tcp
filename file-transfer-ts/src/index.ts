@@ -1,10 +1,11 @@
 // Extracted from Iris Chat (MIT), Copyright Iris Chat contributors.
 import { FipsTcpEndpoint, MarkerStatus, State, type ConnectionId, type FipsDatagramEndpoint } from '@fips/tcp'
 import { ReceiveFiles } from './files.js'
-import { handlePacket, prepareReceiving } from './protocol.js'
+import { handlePacket, prepareReceiving, pollWork } from './protocol.js'
 import { cleanup, emit, newConnection, OFFER_MS, rememberEnded, saveClaim, terminalClaim, type Connection, type Runtime } from './state.js'
 import { DIRECT_FILE_CHUNK_BYTES, directFileFrame, errorText, manifestDigest, normalizePeer,
   pendingBytes, pendingControl, randomSeed, validateClaim, validateFiles } from './wire.js'
+import { verificationDeadline } from './work.js'
 import type { DirectFileSource, DirectFileSpec, DirectFileTcpOptions, DirectFileTransferOptions } from './types.js'
 export type * from './types.js'
 export { DIRECT_FILE_CHUNK_BYTES, DirectFileReader, directFileFrame, manifestDigest, prefixDigest } from './wire.js'
@@ -18,6 +19,7 @@ class TransportFailure extends Error {}
 export class DirectFileTcp {
   private readonly r: Runtime
   private readonly opening = new Set<string>()
+  private readonly preparing = new Map<string, { c: Connection; controller: AbortController; deadline: number; promise: Promise<void> }>()
   private readonly timer: ReturnType<typeof setInterval>
   private operation: Promise<unknown> = Promise.resolve()
   private tickPending = false
@@ -95,19 +97,27 @@ export class DirectFileTcp {
     r.memoryReserved += reserved; this.opening.add(id)
     const c = newConnection(r, id, peer, new ReceiveFiles(id, files.map(file => ({ ...file })), r.options))
     c.side = 'receive'; c.version = options.version ?? 1; c.token = token; c.manifest = manifestDigest(files); c.reserved = reserved
+    c.expires = Math.min(options.expires ?? r.now() + OFFER_MS, r.now() + OFFER_MS)
+    const controller = new AbortController()
+    let settled!: () => void
+    const completed = new Promise<void>(resolve => { settled = resolve })
+    const preparation = prepareReceiving(r, c, controller.signal)
+    this.preparing.set(id, { c, controller, deadline: verificationDeadline(r.now(), c.role.kind === 'receiving' ? c.role.total : 0, c.expires), promise: completed })
     try {
+      await preparation
       await this.enqueue(async () => {
+        controller.signal.throwIfAborted()
         if (r.stopped) throw new TransportFailure('File connection stopped')
-        await prepareReceiving(r, c)
         let stream: ConnectionId
         try { stream = await r.tcp.connect(peer) } catch (error) { throw new TransportFailure(errorText(error)) }
+        c.lastActivity = r.now()
         r.connections.set(stream, c)
       })
     } catch (error) {
       await cleanup(r, c, c.version === 2 && error instanceof TransportFailure)
-      emit(r, { type: c.version === 2 && error instanceof TransportFailure ? 'paused' : 'failed', transferId: id, peer, error: errorText(error) })
+      emit(r, { type: c.cancelled ? 'cancelled' : c.version === 2 && error instanceof TransportFailure ? 'paused' : 'failed', transferId: id, peer, error: errorText(error) })
       throw error
-    } finally { this.opening.delete(id) }
+    } finally { this.opening.delete(id); this.preparing.delete(id); settled() }
   }
   async decline(id: string, token: string, senderPeer: string): Promise<void> {
     this.assertAvailable(id)
@@ -126,8 +136,10 @@ export class DirectFileTcp {
   }
   async cancel(id: string): Promise<void> {
     const r = this.r, offer = r.offers.get(id)
+    const preparing = this.preparing.get(id)
+    if (preparing) { preparing.c.cancelled = true; preparing.controller.abort(new Error('File transfer cancelled')) }
     const active = [...r.connections.values()].filter(c => c.transferId === id && !c.terminal && c.claim?.status !== 'completed')
-    if (r.ended.has(id) && !offer && !active.length) return
+    if (r.ended.has(id) && !offer && !active.length && !preparing) return
     for (const c of active) c.cancelled = true
     r.offers.delete(id); rememberEnded(r, id)
     await this.enqueue(async () => {
@@ -146,11 +158,14 @@ export class DirectFileTcp {
       if (received && received.status !== 'completed') await saveClaim(r, 'receive', id, { ...received, status: 'cancelled' })
       if (!active.length) emit(r, { type: 'cancelled', transferId: id, peer: '' })
     })
+    await preparing?.promise.catch(() => undefined)
   }
   async dispose(): Promise<void> {
     const r = this.r
     if (r.stopped) return
     r.stopped = true; clearInterval(this.timer)
+    for (const job of this.preparing.values()) job.controller.abort(new TransportFailure('File connection stopped'))
+    await Promise.allSettled([...this.preparing.values()].map(job => job.promise))
     await this.operation
     for (const [stream, c] of r.connections) await this.fail(stream, c, new TransportFailure('File connection stopped'))
     for (const [id, offer] of r.offers) if (!r.ended.has(id)) {
@@ -169,6 +184,7 @@ export class DirectFileTcp {
   private async tick(): Promise<void> {
     const r = this.r
     if (r.stopped) return
+    for (const job of this.preparing.values()) if (r.now() > job.deadline) job.controller.abort(new TransportFailure('File verification timed out'))
     for (const [id, offer] of r.offers) if (r.now() >= offer.expires) {
       r.offers.delete(id); rememberEnded(r, id)
       emit(r, { type: 'failed', transferId: id, peer: '', error: 'File offer expired' })
@@ -204,7 +220,9 @@ export class DirectFileTcp {
     }
     const state = await r.tcp.state(stream)
     if (!state) throw new TransportFailure('File connection closed')
-    if (r.now() - c.lastActivity > IDLE_MS) throw new TransportFailure('File transfer timed out')
+    const deadline = c.work?.deadline ?? c.waitUntil ?? c.lastActivity + IDLE_MS
+    if (r.now() > deadline) throw new TransportFailure('File transfer timed out')
+    await pollWork(r, c)
     if (state === State.SynSent || state === State.SynReceived) return true
     if (state !== State.Established && state !== State.CloseWait) throw new TransportFailure('File connection closed')
     const bytes = await r.tcp.read(stream, DIRECT_FILE_CHUNK_BYTES + 1024)
@@ -226,7 +244,10 @@ export class DirectFileTcp {
         const chunk = await c.role.nextChunk()
         if (c.cancelled || c.revoked) return true
         if (chunk) c.pending = pendingBytes(directFileFrame(1, chunk))
-        else if (!c.doneSent) { c.pending = pendingControl({ type: 'done' }); c.doneSent = true }
+        else if (!c.doneSent) {
+          c.pending = pendingControl({ type: 'done' }); c.doneSent = true
+          c.waitUntil = verificationDeadline(r.now(), c.role.total, c.claim?.expires ?? c.expires, 2)
+        }
       } else if (c.role.kind === 'finish') {
         if (c.doneSent) {
           if (c.completion) { emit(r, c.completion); c.terminal = true; c.completion = undefined }

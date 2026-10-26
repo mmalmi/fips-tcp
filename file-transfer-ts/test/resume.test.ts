@@ -5,6 +5,7 @@ import type { FipsDatagramEndpoint, FipsServiceContext } from '@fips/tcp'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { DirectFileTcp, manifestDigest, prefixDigest, type DirectFileStateStore, type DirectFileClaim,
   type DirectFileEvent, type DirectFileSink, type DirectFileSource } from '../src/index.js'
+import { verificationDeadline } from '../src/work.js'
 import { pendingControl, parseControl, toHex } from '../src/wire.js'
 const vectors = JSON.parse(readFileSync(new URL('../../protocol/file-transfer-v2-vectors.json', import.meta.url), 'utf8'))
 class Store implements DirectFileStateStore {
@@ -162,3 +163,86 @@ it('does not reveal a completed receipt to another authenticated peer', async ()
   expect(event(stranger.events, 'completed')).toBeUndefined()
   expect(b.events).toEqual([])
 })
+
+
+it('bounds verification time by retained bytes and authenticated offer expiry', () => {
+  expect(verificationDeadline(1000, 32 * 1024 * 1024, 200_000)).toBe(93_000)
+  expect(verificationDeadline(1000, 100 * 1024 * 1024 * 1024, 90_000)).toBe(90_000)
+})
+
+it('keeps other transfers responsive while a slow resumed prefix exceeds the normal idle timeout', async () => {
+  const prefix = new Uint8Array(32 * 1024 * 1024).fill(37)
+  const bytes = new Uint8Array(prefix.length + 3); bytes.set(prefix); bytes.set([1, 2, 3], prefix.length)
+  const file = source('slow.bin', bytes), disk = new Disk(); disk.files.set(0, prefix)
+  let release!: () => void, started = false
+  const blocked = new Promise<void>(resolve => { release = resolve })
+  const original = file.blob.slice.bind(file.blob)
+  file.blob.slice = (start, end, type) => {
+    const chunk = original(start, end, type)
+    if (!started) {
+      started = true
+      const read = chunk.arrayBuffer.bind(chunk)
+      chunk.arrayBuffer = async () => { await blocked; return read() }
+    }
+    return chunk
+  }
+  const a = device(0, new Store()), b = device(1, new Store(), disk)
+  a.engine.registerOffer('slow', token, [peers[1]], [file], { version: 2 })
+  const receiving = b.engine.receive('slow', token, peers[0], [file], { version: 2 })
+  await until(() => started)
+  await receiving
+  const c = device(2, new Store()), quick = [source('quick.txt', Uint8Array.of(9))]
+  a.engine.registerOffer('quick', token, [peers[2]], quick, { version: 2 })
+  await c.engine.receive('quick', token, peers[0], quick, { version: 2 })
+  await until(() => !!event(c.events, 'completed'))
+  await vi.advanceTimersByTimeAsync(61_000)
+  expect(b.events.some(e => e.type === 'failed' || e.type === 'paused')).toBe(false)
+  release()
+  await until(() => !!event(b.events, 'completed'))
+  expect(disk.files.get(0)?.length).toBe(bytes.length)
+  expect(toHex(sha256(disk.files.get(0)!))).toBe(file.sha256)
+}, 15_000)
+
+it('cancels a blocked authenticated prefix job without waiting for the read', async () => {
+  const file = source('blocked.bin', Uint8Array.of(1, 2, 3)), disk = new Disk()
+  disk.files.set(0, Uint8Array.of(1))
+  let started = false
+  const original = file.blob.slice.bind(file.blob)
+  file.blob.slice = (start, end, type) => {
+    const chunk = original(start, end, type)
+    chunk.arrayBuffer = () => { started = true; return new Promise(() => {}) }
+    return chunk
+  }
+  const senderStore = new Store(), a = device(0, senderStore), b = device(1, new Store(), disk)
+  a.engine.registerOffer('blocked', token, [peers[1]], [file], { version: 2 })
+  await b.engine.receive('blocked', token, peers[0], [file], { version: 2 })
+  await until(() => started)
+  await a.engine.cancel('blocked')
+  await until(() => !!event(b.events, 'cancelled'))
+  expect(senderStore.claims.get('send/blocked')?.status).toBe('cancelled')
+})
+
+it('allows bounded verification/export after Done without blocking unrelated transfers', async () => {
+  const bytes = new Uint8Array(16 * 1024 * 1024).fill(19)
+  const file = source('export.bin', bytes), disk = new Disk(); disk.files.set(0, bytes)
+  let release!: () => void, exporting = false
+  const blocked = new Promise<void>(resolve => { release = resolve }), sink = disk.sink.bind(disk)
+  disk.sink = async (id, index) => {
+    const value = await sink(id, index), commit = value.commit!
+    value.commit = async () => { exporting = true; await blocked; return commit() }
+    return value
+  }
+  const a = device(0, new Store()), b = device(1, new Store(), disk)
+  a.engine.registerOffer('export', token, [peers[1]], [file], { version: 2 })
+  const receiving = b.engine.receive('export', token, peers[0], [file], { version: 2 })
+  await until(() => exporting); await receiving
+  const c = device(2, new Store()), quick = [source('quick.txt', Uint8Array.of(1))]
+  b.engine.registerOffer('quick-export', token, [peers[2]], quick, { version: 2 })
+  await c.engine.receive('quick-export', token, peers[1], quick, { version: 2 })
+  await until(() => !!event(c.events, 'completed'))
+  await vi.advanceTimersByTimeAsync(61_000)
+  expect(a.events.some(e => e.type === 'failed' || e.type === 'paused')).toBe(false)
+  release()
+  await until(() => !!event(a.events, 'completed'))
+  expect(disk.commits.size).toBe(1)
+}, 15_000)

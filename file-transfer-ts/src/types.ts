@@ -9,7 +9,8 @@ export interface DirectFileSink {
   retained?: Blob
   write(chunk: Uint8Array): Promise<void>
   finish(): Promise<Blob | undefined>
-  commit?(): Promise<Blob>
+  /** Honor cancellation between bounded export writes. */
+  commit?(signal?: AbortSignal): Promise<Blob>
   suspend?(): Promise<void>
   abort(): Promise<void>
 }

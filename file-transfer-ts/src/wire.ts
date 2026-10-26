@@ -1,5 +1,6 @@
 // Extracted from Iris Chat (MIT), Copyright Iris Chat contributors.
 import type { SendMarker } from '@fips/tcp'
+import { abortable } from './work.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import type { DirectFileSource, DirectFileSpec } from './types.js'
 export const DIRECT_FILE_CHUNK_BYTES = 32 * 1024
@@ -105,14 +106,16 @@ export function manifestDigest(files: DirectFileSpec[]): string {
   }
   return toHex(hash.digest())
 }
-export async function prefixDigest(files: DirectFileSource[], offset: number): Promise<string> {
+export async function prefixDigest(files: DirectFileSource[], offset: number, signal?: AbortSignal): Promise<string> {
   const total = files.reduce((n, f) => n + f.sizeBytes, 0)
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > total) throw new Error('Invalid file resume offset')
   const hash = sha256.create()
   for (const file of files) {
     const limit = Math.min(file.sizeBytes, offset)
     for (let start = 0; start < limit; start += DIRECT_FILE_CHUNK_BYTES) {
-      hash.update(new Uint8Array(await file.blob.slice(start, Math.min(limit, start + DIRECT_FILE_CHUNK_BYTES)).arrayBuffer()))
+      signal?.throwIfAborted()
+      hash.update(new Uint8Array(await abortable(file.blob.slice(start, Math.min(limit, start + DIRECT_FILE_CHUNK_BYTES)).arrayBuffer(), signal)))
+      if (start && start % (1024 * 1024) === 0) await abortable(new Promise<void>(resolve => setTimeout(resolve, 0)), signal)
     }
     offset -= limit
     if (!offset) break

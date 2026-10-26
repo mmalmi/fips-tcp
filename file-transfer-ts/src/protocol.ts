@@ -1,7 +1,8 @@
 import { ReceiveFiles, SendFiles } from './files.js'
-import { cleanup, emit, OFFER_MS, saveClaim, terminalClaim, type Connection, type Runtime } from './state.js'
+import { cleanup, emit, saveClaim, terminalClaim, type Connection, type Runtime } from './state.js'
 import { manifestDigest, parseControl, pendingControl, prefixDigest, validateClaim } from './wire.js'
-import type { DirectFileClaim } from './types.js'
+import { startWork, verificationDeadline } from './work.js'
+import type { DirectFileResult, DirectFileClaim } from './types.js'
 
 function reject(c: Connection, id: string, reason: 'unavailable' | 'mismatch' | 'expired'): boolean {
   c.pending = pendingControl({ type: 'rejected', id, reason })
@@ -11,7 +12,7 @@ function reject(c: Connection, id: string, reason: 'unavailable' | 'mismatch' | 
 export async function handlePacket(r: Runtime, c: Connection, packet: Uint8Array): Promise<boolean> {
   if (packet[0] === 1) {
     if (c.role.kind === 'finish') return true
-    if (c.role.kind !== 'receiving' || !c.ready) throw new Error('Unexpected file data')
+    if (c.role.kind !== 'receiving' || !c.ready || c.work) throw new Error('Unexpected file data')
     await c.role.write(packet.subarray(1))
     return true
   }
@@ -58,14 +59,18 @@ export async function handlePacket(r: Runtime, c: Connection, packet: Uint8Array
     if ([...r.connections.values()].some(other => other !== c && other.transferId === control.id && !other.terminal)) {
       return reject(c, control.id, 'unavailable')
     }
-    let offset = 0
     if (control.type === 'resume') {
       if (offer.version !== 2 || !r.options.store) return reject(c, control.id, 'unavailable')
       const total = offer.files.reduce((n, file) => n + file.sizeBytes, 0)
       if (control.manifest !== manifest || control.offset > total ||
-        (claim?.status === 'completed' && control.offset !== total) ||
-        control.prefix_sha256 !== await prefixDigest(offer.files, control.offset)) return reject(c, control.id, 'mismatch')
-      offset = control.offset; c.version = 2
+        (claim?.status === 'completed' && control.offset !== total)) return reject(c, control.id, 'mismatch')
+      c.version = 2; c.transferId = control.id; c.token = control.token; c.manifest = manifest
+      c.claim = claim ?? { peer: c.peer, token: c.token, manifest, expires: offer.expires, status: 'claimed' }
+      c.role = { kind: 'verifying' }
+      c.work = startWork('prefix', verificationDeadline(r.now(), control.offset, offer.expires),
+        signal => prefixDigest(offer.files, control.offset, signal))
+      c.work.offset = control.offset; c.work.expected = control.prefix_sha256
+      return true
     } else if (claim) return reject(c, control.id, 'unavailable')
     c.transferId = control.id; c.token = control.token; c.manifest = manifest
     if (offer.version === 2) {
@@ -73,34 +78,26 @@ export async function handlePacket(r: Runtime, c: Connection, packet: Uint8Array
       if (control.type === 'decline') c.claim.status = 'declined'
       await saveClaim(r, 'send', c.transferId, c.claim)
     }
-    if (control.type !== 'resume') r.offers.delete(control.id)
+    r.offers.delete(control.id)
     if (control.type === 'decline') {
       c.terminal = true
       emit(r, { type: 'declined', transferId: c.transferId, peer: c.peer })
       return false
     }
-    c.role = new SendFiles(offer.files, offset)
-    if (c.version === 2) c.pending = pendingControl({ type: 'ready', id: c.transferId, offset })
+    c.role = new SendFiles(offer.files, 0)
     emit(r, { type: 'accepted', transferId: c.transferId, peer: c.peer,
-      transferredBytes: offset, totalBytes: c.role.total })
+      transferredBytes: 0, totalBytes: c.role.total })
     return true
   }
   if (control.type === 'ready' && c.role.kind === 'receiving' && c.version === 2 && !c.ready &&
     control.id === c.transferId && control.offset === c.role.transferred) {
-    c.ready = true
+    c.ready = true; c.waitUntil = undefined
     return true
   }
   if (control.type === 'done' && c.role.kind === 'receiving' && c.ready) {
     const role = c.role
-    const files = await role.commit()
-    await terminalClaim(r, c, 'completed')
-    await cleanup(r, c)
-    c.role = { kind: 'finish' }; c.pending = pendingControl({ type: 'received' })
-    c.doneSent = true
-    const completion = { type: 'completed' as const, transferId: c.transferId, peer: c.peer, files,
-      transferredBytes: role.transferred, totalBytes: role.total }
-    if (c.version === 2) c.completion = completion
-    else { c.terminal = true; emit(r, completion) }
+    if (c.work) throw new Error('File verification already started')
+    c.work = startWork('commit', verificationDeadline(r.now(), role.total, c.claim?.expires ?? c.expires, 2), signal => role.commit(signal))
     return true
   }
   if (control.type === 'received' && c.role.kind === 'announce') {
@@ -125,7 +122,7 @@ export async function handlePacket(r: Runtime, c: Connection, packet: Uint8Array
   }
   throw new Error('Invalid file transfer request')
 }
-export async function prepareReceiving(r: Runtime, c: Connection): Promise<void> {
+export async function prepareReceiving(r: Runtime, c: Connection, signal?: AbortSignal): Promise<void> {
   if (!(c.role instanceof ReceiveFiles)) throw new Error('Invalid file destination')
   if (c.version === 1) { c.pending = pendingControl({ type: 'accept', id: c.transferId, token: c.token }); return }
   if (!r.options.store || !r.options.createReceiveFile) throw new Error('Persistent file transfer storage is unavailable')
@@ -133,11 +130,41 @@ export async function prepareReceiving(r: Runtime, c: Connection): Promise<void>
   const previous = await r.options.store.load(`receive/${c.transferId}`)
   if (previous && (previous.peer !== c.peer || previous.token !== c.token || previous.manifest !== c.manifest ||
     ['cancelled', 'declined'].includes(previous.status) || previous.expires <= r.now())) throw new Error('File offer is no longer available')
+  signal?.throwIfAborted()
   c.claim = previous ?? { peer: c.peer, token: c.token, manifest: c.manifest,
-    expires: r.now() + OFFER_MS, status: 'claimed' }
+    expires: c.expires, status: 'claimed' }
   await saveClaim(r, 'receive', c.transferId, c.claim)
-  const prefix = await c.role.restore()
+  const prefix = await c.role.restore(signal)
+  signal?.throwIfAborted()
+  c.waitUntil = verificationDeadline(r.now(), c.role.transferred, c.claim.expires)
   if (previous?.status === 'completed' && c.role.transferred !== c.role.total) throw new Error('Completed file is no longer available')
   c.pending = pendingControl({ type: 'resume', id: c.transferId, token: c.token,
     manifest: c.manifest, offset: c.role.transferred, prefix_sha256: prefix })
+}
+
+export async function pollWork(r: Runtime, c: Connection): Promise<void> {
+  const work = c.work
+  if (!work?.done) return
+  c.work = undefined
+  if (work.error) throw work.error
+  if (work.kind === 'prefix') {
+    const offer = r.offers.get(c.transferId)
+    if (!offer || !offer.peers.has(c.peer) || c.cancelled || c.revoked) throw new Error('Device authorization changed')
+    if (work.value !== work.expected) { reject(c, c.transferId, 'mismatch'); return }
+    await saveClaim(r, 'send', c.transferId, c.claim!)
+    c.role = new SendFiles(offer.files, work.offset!)
+    c.pending = pendingControl({ type: 'ready', id: c.transferId, offset: work.offset! })
+    emit(r, { type: 'accepted', transferId: c.transferId, peer: c.peer, transferredBytes: work.offset!, totalBytes: c.role.total })
+  } else {
+    if (c.role.kind !== 'receiving') return
+    const role = c.role
+    await terminalClaim(r, c, 'completed')
+    await cleanup(r, c)
+    c.role = { kind: 'finish' }; c.pending = pendingControl({ type: 'received' }); c.doneSent = true
+    const completion = { type: 'completed' as const, transferId: c.transferId, peer: c.peer, files: work.value as DirectFileResult[],
+      transferredBytes: role.transferred, totalBytes: role.total }
+    if (c.version === 2) c.completion = completion
+    else { c.terminal = true; emit(r, completion) }
+  }
+  c.lastActivity = r.now()
 }
