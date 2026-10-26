@@ -1,5 +1,10 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.45 - 2026-10-26
+
+- Use FIPS core 0.4.110 for the DTLS cryptography security update.
+  Preserve TCP core 0.2.6, endpoint behavior, and the wire format.
+
 ## nvpn-fips-tcp-endpoint 0.2.42 - 2026-10-21
 
 - Use FIPS core 0.4.107 for authenticated Bluetooth identity reconnection.
