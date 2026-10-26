@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "fips-tcp",
     "fips-tcp-endpoint",
+    "fips-file-transfer",
     "interop-driver",
     "smoltcp-oracle",
 ]

@@ -1,0 +1,27 @@
+[package]
+name = "nvpn-fips-file-transfer"
+version = "0.1.0"
+description = "Recipient-approved resumable file streams over TCP/FIPS"
+edition.workspace = true
+license = "MIT"
+rust-version.workspace = true
+repository.workspace = true
+
+[lib]
+name = "fips_file_transfer"
+
+[dependencies]
+nvpn-fips-core = "=0.4.110"
+nvpn-fips-tcp = { version = "0.2.6", path = "../fips-tcp" }
+nvpn-fips-tcp-endpoint = { version = "0.2.45", path = "../fips-tcp-endpoint" }
+flume = { version = "0.11", default-features = false, features = ["async"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+rand = "0.8"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread"] }
