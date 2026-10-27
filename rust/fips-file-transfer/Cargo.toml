@@ -11,9 +11,9 @@ repository.workspace = true
 name = "fips_file_transfer"
 
 [dependencies]
-nvpn-fips-core = "=0.4.113"
+nvpn-fips-core = "=0.4.114"
 nvpn-fips-tcp = { version = "0.2.6", path = "../fips-tcp" }
-nvpn-fips-tcp-endpoint = { version = "0.2.48", path = "../fips-tcp-endpoint" }
+nvpn-fips-tcp-endpoint = { version = "0.2.49", path = "../fips-tcp-endpoint" }
 flume = { version = "0.11", default-features = false, features = ["async"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
