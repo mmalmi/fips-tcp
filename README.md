@@ -201,8 +201,8 @@ above this API.
 ## Verification
 
 ```sh
-cargo test --manifest-path rust/Cargo.toml --workspace
-pnpm --dir ts install
+cargo test --locked --manifest-path rust/Cargo.toml --workspace
+pnpm --dir ts install --frozen-lockfile
 pnpm --dir ts check
 pnpm --dir ts build
 pnpm --dir ts test
@@ -224,3 +224,33 @@ TIME-WAIT, structural TypeScript FIPS endpoint carriage, explicit abort/reset,
 payload ACK markers, real TypeScript/Rust FIPS endpoint carriage, and
 bidirectional smoltcp interoperability through SYN, data, ACK loss,
 retransmission, and FIN.
+
+## Rust library releases
+
+Commit source, manifests, `rust/Cargo.lock` and release scripts before packaging.
+The endpoint qualification uses preinstalled Rust/Cargo 1.99.0 with default
+features on `aarch64-apple-darwin`, Xcode's macOS 27 SDK/Clang, and a macOS 14
+deployment target. No additional system libraries or privileged prerequisite
+installation are required. Reuse a compatible target directory with one writer
+and record any explicit compiler/linker flags.
+
+```sh
+cargo +1.99.0 test --frozen --release --target aarch64-apple-darwin \
+  --manifest-path rust/Cargo.toml -p nvpn-fips-tcp-endpoint --test endpoint \
+  -- --test-threads=1
+```
+
+`scripts/release-library.py` contains the bounded source/package/ref workflow
+and the preinstalled Hashtree helper checksum pins. It needs Python 3.11+ and
+Git. Use an exact clean commit, the committed lock, and a private plan with
+existing destinations and local paths. The plan format and workflow are
+documented in the [matching release instructions](https://github.com/mmalmi/nostr-pubsub/blob/452e8686dd187a58b1b7057713efb879bf5e0777/README.md#library-releases).
+Set `workspace` to `rust` and `crate_path` to `rust/fips-tcp-endpoint`.
+
+The source step verifies complete public Git history with an empty cache and
+local daemon use disabled before Cargo publication. The package step uses
+`--locked --no-verify`, checks source bytes/executable metadata and dependency
+pins, then verifies registry bytes; focused consumer tests remain required.
+Do not republish after an uncertain upload without first reconciling its
+registry checksum. These gates do not claim a complete dependency source audit
+or native binary reproduction.

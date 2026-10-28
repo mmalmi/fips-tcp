@@ -1,5 +1,11 @@
 # Changelog
 
+## nvpn-fips-tcp-endpoint 0.2.50 - 2026-10-28
+
+- Use FIPS core 0.4.115 for the verified allocation improvement.
+  Preserve TCP core 0.2.6 and the TCP/FIPS wire format.
+- Commit release tooling with pinned inputs and source/package verification.
+
 ## nvpn-fips-tcp-endpoint 0.2.42 - 2026-10-21
 
 - Use FIPS core 0.4.107 for authenticated Bluetooth identity reconnection.
