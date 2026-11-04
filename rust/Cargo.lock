@@ -1508,9 +1508,9 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-core"
-version = "0.4.115"
+version = "0.4.116"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6909318f877a31517d29d1ba923dab19a73abd6c7f8a0421f2b7f83492d0080"
+checksum = "c190dab041a3f89e67db81588599f5b089de3ff2729ea4444764f8d0da5f0f21"
 dependencies = [
  "async-wsocket",
  "base64",
@@ -1541,6 +1541,7 @@ dependencies = [
  "sha2",
  "simple-dns",
  "socket2",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-socks",
@@ -1555,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-file-transfer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flume",
  "libc",
@@ -1595,7 +1596,7 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-tcp-endpoint"
-version = "0.2.50"
+version = "0.2.51"
 dependencies = [
  "nvpn-fips-core",
  "nvpn-fips-tcp",
