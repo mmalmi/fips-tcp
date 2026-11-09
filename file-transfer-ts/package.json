@@ -1,6 +1,6 @@
 {
   "name": "@fips/file-transfer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Recipient-approved resumable file transfers over authenticated FIPS streams",
   "type": "module",
   "main": "dist/index.js",
@@ -35,6 +35,14 @@
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "@fips/tcp": "https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.5/fips-tcp-0.2.4.tgz",
+    "@types/node": "24.19.2"
+  },
+  "packageManager": "pnpm@10.24.0",
+  "pnpm": {
+    "overrides": {
+      "@fips/tcp": "https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.5/fips-tcp-0.2.4.tgz"
+    }
   }
 }
