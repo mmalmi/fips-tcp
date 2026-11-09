@@ -12,7 +12,7 @@ pnpm install --frozen-lockfile --ignore-scripts
 pnpm check
 pnpm test
 pnpm build
-pnpm pack --out ./artifacts/fips-file-transfer.tgz
+pnpm pack --pack-destination ./artifacts
 ```
 
 The test suite includes the canonical Rust/TypeScript manifest and control
