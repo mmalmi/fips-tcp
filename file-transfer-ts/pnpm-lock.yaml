@@ -11,6 +11,9 @@ importers:
       "@noble/hashes":
         specifier: "^2.4.0"
         version: 2.4.0
+      "@fips/tcp":
+        specifier: https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.5/fips-tcp-0.2.4.tgz
+        version: https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.5/fips-tcp-0.2.4.tgz
     devDependencies:
       typescript:
         specifier: "^5.9.3"
@@ -18,9 +21,6 @@ importers:
       vitest:
         specifier: "^4.1.12"
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(terser@5.51.2))
-      "@fips/tcp":
-        specifier: https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.5/fips-tcp-0.2.4.tgz
-        version: https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.5/fips-tcp-0.2.4.tgz
       "@types/node":
         specifier: 24.19.2
         version: 24.19.2
