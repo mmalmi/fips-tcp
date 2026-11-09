@@ -329,3 +329,52 @@ it('allows bounded verification/export after Done without blocking unrelated tra
   await until(() => !!event(a.events, 'completed'))
   expect(disk.commits.size).toBe(1)
 }, 15_000)
+
+
+it.each(['dispose', 'cancel', 'revoke'] as const)('preserves shutdown intent when a sending Blob read rejects: %s', async intent => {
+  const senderStore = new Store(), receiverStore = new Store(), disk = new Disk()
+  const bytes = Uint8Array.from({ length: 400_123 }, (_, i) => i % 251)
+  const file = source('interrupted.bin', bytes), slice = file.blob.slice.bind(file.blob)
+  let started = false, rejectRead!: (error: Error) => void
+  file.blob.slice = (start, end, type) => {
+    const chunk = slice(start, end, type)
+    if (!started && (start ?? 0) >= 65_536) {
+      chunk.arrayBuffer = () => { started = true; return new Promise<ArrayBuffer>((_resolve, reject) => { rejectRead = reject }) }
+    }
+    return chunk
+  }
+  let a = device(0, senderStore), b = device(1, receiverStore, disk)
+  a.engine.registerOffer('interrupted', token, [peers[1], peers[2]], [file], { version: 2 })
+  await b.engine.receive('interrupted', token, peers[0], [file], { version: 2 })
+  await until(() => started && (disk.files.get(0)?.length ?? 0) >= 65_536)
+  expect(senderStore.claims.get('send/interrupted')?.status).toBe('claimed')
+  a.endpoint.dropped = true
+  const cancel = intent === 'cancel' ? a.engine.cancel('interrupted') : Promise.resolve()
+  if (intent === 'revoke') a.engine.restrictOffer('interrupted', [peers[2]])
+  const closing = a.engine.dispose()
+  rejectRead(new DOMException('The page is closing', 'NotReadableError'))
+  await Promise.all([closing, cancel, b.engine.dispose()])
+  file.blob.slice = slice
+  const retained = disk.files.get(0)!.slice()
+  expect(retained.length).toBeGreaterThan(0); expect(retained.length).toBeLessThan(bytes.length)
+  expect(senderStore.claims.get('send/interrupted')?.status).toBe(intent === 'dispose' ? 'claimed' : 'cancelled')
+  if (intent === 'dispose') {
+    expect(a.events.some(e => e.type === 'paused')).toBe(true)
+    expect(a.events.some(e => e.type === 'failed' || e.type === 'cancelled')).toBe(false)
+  }
+  a = device(0, senderStore); b = device(1, receiverStore, disk)
+  a.engine.registerOffer('interrupted', token, [peers[1]], [file], { version: 2 })
+  await b.engine.receive('interrupted', token, peers[0], [file], { version: 2 })
+  if (intent === 'dispose') {
+    await until(() => !!event(a.events, 'completed') && !!event(b.events, 'completed'))
+    expect(event(a.events, 'accepted')?.transferredBytes).toBe(retained.length)
+    expect(disk.files.get(0)).toEqual(bytes)
+    expect(senderStore.claims.get('send/interrupted')?.status).toBe('completed')
+    expect(receiverStore.claims.get('receive/interrupted')?.status).toBe('completed')
+  } else {
+    await until(() => !!event(b.events, 'failed'))
+    expect(event(a.events, 'accepted')).toBeUndefined()
+    expect(event(a.events, 'completed')).toBeUndefined()
+    expect(senderStore.claims.get('send/interrupted')?.status).toBe('cancelled')
+  }
+})
