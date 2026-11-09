@@ -271,7 +271,7 @@ export class DirectFileTcp {
     return true
   }
   private async fail(stream: ConnectionId, c: Connection, error: unknown): Promise<void> {
-    const r = this.r, paused = c.version === 2 && error instanceof TransportFailure && !c.cancelled && !c.revoked
+    const r = this.r, paused = c.version === 2 && (r.stopped || error instanceof TransportFailure) && !c.cancelled && !c.revoked
     r.connections.delete(stream)
     if (!paused && c.claim && c.claim.status !== 'completed') await terminalClaim(r, c, 'cancelled')
     await cleanup(r, c, paused)
