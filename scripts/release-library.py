@@ -21,9 +21,10 @@ from urllib.parse import urlsplit
 import urllib.error
 import urllib.request
 
-HELPER_SHA256 = "d60f75bc324e128b20b0bd1a1ba76b87c3161cbbb45cb656c79712bd9ee22ec4"
-# Preinstalled git-remote-htree 0.2.150, aarch64-apple-darwin. Archive pin:
-HELPER_ARCHIVE_SHA256 = "ea575ecfb06d5dc461010fd577a6d3a7397f0bd82dc64fdddf0261d0a11706ad"
+HELPER_SHA256 = "5994554a50c6a6b05ce536910fc8ed8cbf2eed834d13233a8792d4a28e83ef32"
+# Hashtree 0.4.5 for Apple Silicon, pinned by the Haps bundle manifest at
+# 9a3753f78525aa36ec5086cff6f70d32edbffe52. The archive pin is below.
+HELPER_ARCHIVE_SHA256 = "218e10439fe134a72f3971d37c5415fb8feb0317fa15425803e8f311401c1499"
 TOOLCHAIN = "1.99.0"
 
 
