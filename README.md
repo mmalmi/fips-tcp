@@ -252,5 +252,9 @@ local daemon use disabled before Cargo publication. The package step uses
 `--locked --no-verify`, checks source bytes/executable metadata and dependency
 pins, then verifies registry bytes; focused consumer tests remain required.
 Do not republish after an uncertain upload without first reconciling its
-registry checksum. These gates do not claim a complete dependency source audit
+registry checksum.
+When publishing a release branch and updating `master` on Hashtree, push the
+release branch in a separate command before updating `master`. Git can reorder
+refspecs in a single push, and the helper makes the last updated branch the
+default. Check `git ls-remote --symref origin HEAD` after updating `master`. These gates do not claim a complete dependency source audit
 or native binary reproduction.
