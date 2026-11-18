@@ -104,6 +104,13 @@ impl Peer {
         .await
         .expect("file transfer event timed out")
     }
+    fn snapshot(&self, id: &str) -> TransferSnapshot {
+        self.sender
+            .snapshots()
+            .into_iter()
+            .find(|row| row.id == id)
+            .expect("file transfer snapshot missing")
+    }
     async fn stop(self) {
         self.task.abort();
         self.endpoint.shutdown().await.unwrap();
@@ -758,6 +765,21 @@ async fn local_cancel_during_verified_export_preserves_completion() {
         .await
         .expect("Verified export did not start")
         .unwrap();
+    // Observe verification before any later command can refresh the snapshot.
+    let verified = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let row = b.snapshot("export-cancel");
+            if row.status == TransferStatus::Paused && !row.local_paths.is_empty() {
+                break row;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Verified private result was not published");
+    assert_eq!(verified.transferred_bytes, bytes.len() as u64);
+    assert!(Path::new(&verified.local_paths[0]).starts_with(b.state.path()));
+    assert_eq!(fs::read(&verified.local_paths[0]).unwrap(), bytes);
     b.sender.cancel("export-cancel").unwrap();
     b.sender.cancel("export-cancel").unwrap();
     b.sender
@@ -800,6 +822,10 @@ async fn local_cancel_during_verified_export_preserves_completion() {
     assert_eq!(transfer_id, "export-cancel");
     assert_eq!(local_paths.len(), 1);
     assert_eq!(fs::read(&local_paths[0]).unwrap(), bytes);
+    let saved = b.snapshot("export-cancel");
+    assert_eq!(saved.status, TransferStatus::Completed);
+    assert_eq!(saved.local_paths, local_paths);
+    assert!(saved.error.is_none());
     let completed = a
         .event(|e| {
             matches!(
@@ -854,6 +880,12 @@ async fn failed_export_can_be_saved_after_sender_goes_offline() {
         .unwrap();
     b.event(|e| matches!(e,TransferEvent::Paused{error,..} if error.contains("export")))
         .await;
+    let failed = b.snapshot("save");
+    assert_eq!(failed.status, TransferStatus::Paused);
+    assert!(failed.error.unwrap().contains("Destination full"));
+    assert_eq!(failed.transferred_bytes, 5);
+    assert!(Path::new(&failed.local_paths[0]).starts_with(b.state.path()));
+    assert_eq!(fs::read(&failed.local_paths[0]).unwrap(), b"hello");
     a.event(|e| matches!(e, TransferEvent::Completed { .. }))
         .await;
     a.stop().await;
@@ -872,6 +904,10 @@ async fn failed_export_can_be_saved_after_sender_goes_offline() {
         panic!("{event:?}")
     };
     assert_eq!(fs::read(&local_paths[0]).unwrap(), b"hello");
+    let saved = b.snapshot("save");
+    assert_eq!(saved.status, TransferStatus::Completed);
+    assert_eq!(saved.local_paths, local_paths);
+    assert!(saved.error.is_none());
     b.stop().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

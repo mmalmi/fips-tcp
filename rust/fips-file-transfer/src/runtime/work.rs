@@ -143,6 +143,7 @@ impl Runtime {
                     .ok_or("File offer unavailable")?;
                 self.store.commit_private(&mut r)?;
                 self.store.records.insert(r.id.clone(), r.clone());
+                self.store.snapshots_dirty = true;
                 if let Some(destination) = self.destinations.remove(&c.id) {
                     self.export_received(c, r, destination, false);
                 } else {

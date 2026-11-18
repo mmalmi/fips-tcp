@@ -323,10 +323,11 @@ pub async fn start(
     )
     .await
     .map_err(|e| e.to_string())?;
-    let store = disk::Store::open(state_dir)?;
+    let mut store = disk::Store::open(state_dir)?;
     let (tx, rx) = flume::bounded(32);
     let policy = Arc::new(RwLock::new(Policy::default()));
     let snapshots = Arc::new(RwLock::new(store.snapshots()));
+    store.snapshots_dirty = false;
     let source = store.source.clone();
     let sender = TransferSender {
         tx,

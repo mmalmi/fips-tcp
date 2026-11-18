@@ -5,6 +5,8 @@ use crate::{
 };
 mod protocol;
 #[cfg(test)]
+mod snapshot_tests;
+#[cfg(test)]
 mod tests;
 mod work;
 
@@ -90,9 +92,13 @@ impl Runtime {
     fn emit(&self, e: TransferEvent) {
         self.pending_events.borrow_mut().push_back(e);
     }
-    fn publish(&self) {
+    fn publish(&mut self) {
+        if !self.store.snapshots_dirty {
+            return;
+        }
         if let Ok(mut rows) = self.snapshots.write() {
             *rows = self.store.snapshots();
+            self.store.snapshots_dirty = false;
         }
     }
     fn authorized(&self, r: &Record, peer: PeerIdentity) -> bool {
@@ -150,6 +156,13 @@ impl Runtime {
             self.store.records.insert(id.into(), r);
             return;
         }
+        let status = if r.resumable {
+            TransferStatus::Paused
+        } else {
+            TransferStatus::Failed
+        };
+        self.store.snapshots_dirty |=
+            r.status != status || r.error.as_deref() != Some(error.as_str());
         if r.resumable {
             r.status = TransferStatus::Paused;
             r.error = Some(error.clone());
@@ -620,8 +633,9 @@ impl Runtime {
             && matches!(c.role, Role::Sending | Role::Receiving { .. })
         {
             if let Some(r) = self.store.records.get_mut(&c.id) {
-                if !r.incoming {
+                if !r.incoming && r.offset != c.offset {
                     r.offset = c.offset;
+                    self.store.snapshots_dirty = true;
                 }
             }
             if let Some(r) = self.store.records.get(&c.id) {

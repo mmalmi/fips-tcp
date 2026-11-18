@@ -1556,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "nvpn-fips-file-transfer"
-version = "0.1.7"
+version = "0.1.9-core123.1"
 dependencies = [
  "flume",
  "libc",

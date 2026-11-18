@@ -17,6 +17,7 @@ impl Runtime {
                 .records
                 .remove(&c.id)
                 .ok_or("File offer unavailable")?;
+            let previous = (r.offset, r.status);
             let mut result = self.store.write(&mut r, &packet[1..]);
             if result.is_ok() {
                 r.status = TransferStatus::Transferring;
@@ -28,6 +29,7 @@ impl Runtime {
                     }
                 }
             }
+            self.store.snapshots_dirty |= previous != (r.offset, r.status);
             self.store.records.insert(c.id.clone(), r);
             return result;
         }

@@ -98,6 +98,8 @@ pub(crate) struct Store {
     cancelled: Option<Arc<AtomicBool>>,
     pub root: PathBuf,
     pub records: HashMap<String, Record>,
+    // Set whenever records change, including in-memory progress before a checkpoint.
+    pub snapshots_dirty: bool,
     pub source: Arc<RwLock<Arc<dyn crate::Source>>>,
 }
 impl Store {
@@ -107,6 +109,7 @@ impl Store {
             root,
             cancelled: None,
             records: HashMap::new(),
+            snapshots_dirty: true,
             source: Arc::new(RwLock::new(Arc::new(RegularSource))),
         };
         for entry in fs::read_dir(&store.root).map_err(|e| e.to_string())? {
@@ -159,6 +162,7 @@ impl Store {
         Self {
             root: self.root.clone(),
             records: HashMap::new(),
+            snapshots_dirty: false,
             source: self.source.clone(),
             cancelled: Some(cancelled),
         }
@@ -202,6 +206,7 @@ impl Store {
             // Other contents are never recursively removed.
             let _ = fs::remove_dir(self.dir(&record.id));
             self.records.remove(&record.id);
+            self.snapshots_dirty = true;
         }
         Ok(())
     }
@@ -223,6 +228,7 @@ impl Store {
     pub fn put(&mut self, record: Record) -> Result<()> {
         self.persist(&record)?;
         self.records.insert(record.id.clone(), record);
+        self.snapshots_dirty = true;
         Ok(())
     }
     pub fn persist(&self, r: &Record) -> Result<()> {
