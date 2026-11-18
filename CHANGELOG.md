@@ -1,5 +1,10 @@
 # Changelog
 
+## TCP endpoint 0.2.58 and file transfer 0.1.8 - 2026-11-18
+
+Use FIPS core 0.4.124 so connections can try the other IP address family
+when the first one stalls.
+
 ## TCP endpoint 0.2.57 and file transfer 0.1.7 - 2026-11-16
 
 Use the shared FIPS core 0.4.123 for peer restart and direct route recovery.
