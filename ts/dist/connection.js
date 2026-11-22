@@ -9,6 +9,7 @@ import { PersistTimer } from "./persist.js";
 import { resetAction } from "./reset.js";
 import { SendProgress } from "./marker.js";
 export class Connection {
+    peerId;
     state;
     peer;
     localPort;
@@ -34,7 +35,8 @@ export class Connection {
     sendProgress = new SendProgress();
     finWait2UntilMs;
     timeWaitUntilMs;
-    constructor(peer, localPort, remotePort, state, sendIsn, recvNxt, config) {
+    constructor(peer, localPort, remotePort, state, sendIsn, recvNxt, config, peerId) {
+        this.peerId = peerId;
         this.peer = peer;
         this.localPort = localPort;
         this.remotePort = remotePort;
@@ -48,12 +50,12 @@ export class Connection {
         this.rtt = new RttEstimator(config.initialRtoMs, config.minRtoMs, config.maxRtoMs);
         this.reno = new Reno(this.mss);
     }
-    static client(peer, localPort, remotePort, isn, nowMs, config) {
-        const connection = new Connection(peer, localPort, remotePort, State.SynSent, isn, 0, config);
+    static client(peer, localPort, remotePort, isn, nowMs, config, peerId = peer) {
+        const connection = new Connection(peer, localPort, remotePort, State.SynSent, isn, 0, config, peerId);
         return [connection, [connection.sendTracked(new FlagSet(Flags.Syn), new Uint8Array(), nowMs)]];
     }
-    static server(peer, syn, isn, nowMs, config) {
-        const connection = new Connection(peer, syn.dstPort, syn.srcPort, State.SynReceived, isn, u32(syn.seq + 1), config);
+    static server(peer, syn, isn, nowMs, config, peerId = peer) {
+        const connection = new Connection(peer, syn.dstPort, syn.srcPort, State.SynReceived, isn, u32(syn.seq + 1), config, peerId);
         connection.updateRemoteWindow(syn.window, nowMs);
         connection.negotiateMss(syn, config);
         return [

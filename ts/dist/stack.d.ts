@@ -22,9 +22,9 @@ export declare class Stack {
     listen(port: number): void;
     closeListener(port: number): void;
     accept(port: number): ConnectionId | undefined;
-    connect(peer: string, remotePort: number, nowMs: number): ConnectionId;
-    connectFromWithIsn(peer: string, localPort: number, remotePort: number, isn: number, nowMs: number): ConnectionId;
-    input(peer: string, bytes: Uint8Array, nowMs: number): void;
+    connect(peer: string, remotePort: number, nowMs: number, peerId?: string): ConnectionId;
+    connectFromWithIsn(peer: string, localPort: number, remotePort: number, isn: number, nowMs: number, peerId?: string): ConnectionId;
+    input(peer: string, bytes: Uint8Array, nowMs: number, peerId?: string): void;
     poll(nowMs: number): void;
     write(id: ConnectionId, bytes: Uint8Array, nowMs: number): number;
     /** Accept payload and return its ACK boundary; an empty payload is a barrier. */

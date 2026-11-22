@@ -13,7 +13,10 @@ export class FipsTcpEndpoint {
         this.stack = new Stack(config, isnSeed);
         this.stack.listen(fspServicePort);
         this.unregister = endpoint.registerService(fspServicePort, (context) => this.enqueue(async () => {
-            this.stack.input(context.src, context.payload, Date.now());
+            const id = fipsPeerId(context.src);
+            if (context.peerId !== undefined && context.peerId !== id)
+                return;
+            this.stack.input(context.src, context.payload, Date.now(), context.peerId ?? id);
             await this.flush();
         }));
     }
@@ -26,7 +29,7 @@ export class FipsTcpEndpoint {
     }
     async connect(peer, nowMs = Date.now()) {
         return this.enqueue(async () => {
-            const id = this.stack.connect(peer, this.fspServicePort, nowMs);
+            const id = this.stack.connect(peer, this.fspServicePort, nowMs, fipsPeerId(peer));
             try {
                 await this.flush();
             }
@@ -121,6 +124,10 @@ export class FipsTcpEndpoint {
         this.operation = result.then(() => undefined, () => undefined);
         return result;
     }
+}
+/** Structural endpoints may also use opaque, case-sensitive peer names. */
+function fipsPeerId(peer) {
+    return /^(?:02|03)[0-9a-f]{64}$/i.test(peer) ? peer.slice(2).toLowerCase() : undefined;
 }
 function checkFspServicePort(port) {
     if (!Number.isInteger(port) || port <= 0 || port > 0xffff) {

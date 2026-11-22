@@ -149,7 +149,9 @@ that deadline expires. Abort emits one TCP reset and immediately releases the
 retained tuple; it is not a replacement for normal orderly close.
 
 The TypeScript adapter accepts the public `FipsNode` service shape without a
-runtime package dependency:
+runtime package dependency. On FIPS links it matches streams and per-peer limits
+by the remote x-only Nostr key. It uses the original compressed key for
+replies and for the value returned by `peer(id)`.
 
 ```ts
 import { FipsTcpEndpoint } from "@fips/tcp";

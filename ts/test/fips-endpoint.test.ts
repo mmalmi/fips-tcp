@@ -165,6 +165,33 @@ test("reservation rejects only new tuples and preserves later carrier operations
   }
 });
 
+test.each([true, false])("matches both FIPS key parities on one TCP tuple (runtime peer ID: %s)", async (withId) => {
+  const x = "ab".repeat(32), route = "03" + x, source = "02" + x;
+  let deliver!: ServiceHandler;
+  const sent: { dst: string; payload: Uint8Array }[] = [];
+  const tcp = new FipsTcpEndpoint({
+    registerService(_port, handler) { deliver = handler; return () => {}; },
+    async sendDatagram(args) { sent.push(args); },
+  }, fspServicePort, { maxConnectionsPerPeer: 1 });
+  try {
+    const id = await tcp.connect(route);
+    const syn = Segment.decode(sent[0]!.payload);
+    const reply = new Segment({ srcPort: syn.dstPort, dstPort: syn.srcPort,
+      seq: 10, ack: (syn.seq + 1) >>> 0, flags: new FlagSet(Flags.Syn | Flags.Ack), window: 65535,
+      options: [{ kind: TcpOptionKind.FipsVersion, version: FIPS_VERSION, reserved: 0 }],
+    });
+    const context = { src: source, srcPort: fspServicePort, dstPort: fspServicePort,
+      payload: reply.encode(), ...(withId ? { peerId: x } : {}) };
+    await deliver(context);
+    expect(await tcp.state(id)).toBe(State.Established);
+    expect(await tcp.peer(id)).toBe(route);
+    expect(sent.map(packet => packet.dst)).toEqual([route, route]);
+    await expect(tcp.connect(source)).rejects.toThrow(/connection limit/i);
+  } finally {
+    await tcp.dispose();
+  }
+});
+
 async function collect(
   endpoint: FipsTcpEndpoint,
   id: number,

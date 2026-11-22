@@ -3,6 +3,7 @@ import { Segment } from "./wire.js";
 import { ConnectionUpdate } from "./connection-types.js";
 import { SendProgress } from "./marker.js";
 export declare class Connection {
+    readonly peerId: string;
     state: State;
     readonly peer: string;
     readonly localPort: number;
@@ -29,8 +30,8 @@ export declare class Connection {
     private finWait2UntilMs;
     private timeWaitUntilMs;
     private constructor();
-    static client(peer: string, localPort: number, remotePort: number, isn: number, nowMs: number, config: Config): [Connection, Segment[]];
-    static server(peer: string, syn: Segment, isn: number, nowMs: number, config: Config): [Connection, Segment[]];
+    static client(peer: string, localPort: number, remotePort: number, isn: number, nowMs: number, config: Config, peerId?: string): [Connection, Segment[]];
+    static server(peer: string, syn: Segment, isn: number, nowMs: number, config: Config, peerId?: string): [Connection, Segment[]];
     handshakeResponse(segment: Segment): Segment | undefined;
     onSegment(segment: Segment, nowMs: number, config: Config): ConnectionUpdate;
     write(bytes: Uint8Array, nowMs: number, config: Config): [number, Segment[]];

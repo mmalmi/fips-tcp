@@ -45,6 +45,7 @@ export class Connection {
     sendIsn: number,
     recvNxt: number,
     config: Config,
+    readonly peerId: string,
   ) {
     this.peer = peer;
     this.localPort = localPort;
@@ -67,8 +68,9 @@ export class Connection {
     isn: number,
     nowMs: number,
     config: Config,
+    peerId = peer,
   ): [Connection, Segment[]] {
-    const connection = new Connection(peer, localPort, remotePort, State.SynSent, isn, 0, config);
+    const connection = new Connection(peer, localPort, remotePort, State.SynSent, isn, 0, config, peerId);
     return [connection, [connection.sendTracked(new FlagSet(Flags.Syn), new Uint8Array(), nowMs)]];
   }
 
@@ -78,8 +80,9 @@ export class Connection {
     isn: number,
     nowMs: number,
     config: Config,
+    peerId = peer,
   ): [Connection, Segment[]] {
-    const connection = new Connection(peer, syn.dstPort, syn.srcPort, State.SynReceived, isn, u32(syn.seq + 1), config);
+    const connection = new Connection(peer, syn.dstPort, syn.srcPort, State.SynReceived, isn, u32(syn.seq + 1), config, peerId);
     connection.updateRemoteWindow(syn.window, nowMs);
     connection.negotiateMss(syn, config);
     return [

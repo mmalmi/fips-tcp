@@ -54,33 +54,35 @@ export class Stack {
         }
         return undefined;
     }
-    connect(peer, remotePort, nowMs) {
-        const localPort = this.allocateEphemeralPort(peer, remotePort);
-        return this.connectFromWithIsn(peer, localPort, remotePort, this.nextIsn(), nowMs);
+    connect(peer, remotePort, nowMs, peerId = peer) {
+        const localPort = this.allocateEphemeralPort(peerId, remotePort);
+        return this.connectFromWithIsn(peer, localPort, remotePort, this.nextIsn(), nowMs, peerId);
     }
-    connectFromWithIsn(peer, localPort, remotePort, isn, nowMs) {
+    connectFromWithIsn(peer, localPort, remotePort, isn, nowMs, peerId = peer) {
         checkPeer(peer);
+        checkPeer(peerId);
         checkPort(localPort);
         checkPort(remotePort);
         checkNow(nowMs);
         if (!Number.isInteger(isn) || isn < 0 || isn > 0xffff_ffff)
             throw new Error("ISN must be a u32");
-        this.ensureConnectionCapacity(peer);
-        const key = connectionKey(peer, localPort, remotePort);
+        this.ensureConnectionCapacity(peer, peerId);
+        const key = connectionKey(peerId, localPort, remotePort);
         if (this.lookup.has(key))
             throw new Error("connection already exists");
         const id = this.allocateConnectionId();
-        const [connection, segments] = Connection.client(peer, localPort, remotePort, isn, nowMs, this.config);
+        const [connection, segments] = Connection.client(peer, localPort, remotePort, isn, nowMs, this.config, peerId);
         this.lookup.set(key, id);
         this.connections.set(id, connection);
         this.emit(id, segments);
         return id;
     }
-    input(peer, bytes, nowMs) {
+    input(peer, bytes, nowMs, peerId = peer) {
         checkPeer(peer);
+        checkPeer(peerId);
         checkNow(nowMs);
         const segment = Segment.decode(bytes);
-        const key = connectionKey(peer, segment.dstPort, segment.srcPort);
+        const key = connectionKey(peerId, segment.dstPort, segment.srcPort);
         let id = this.lookup.get(key);
         if (id === undefined) {
             if (segment.flags.has(Flags.Syn) &&
@@ -90,9 +92,9 @@ export class Stack {
                     this.emitReset(peer, segment);
                     return;
                 }
-                this.ensureConnectionCapacity(peer);
+                this.ensureConnectionCapacity(peer, peerId);
                 id = this.allocateConnectionId();
-                const [connection, segments] = Connection.server(peer, segment, this.nextIsn(), nowMs, this.config);
+                const [connection, segments] = Connection.server(peer, segment, this.nextIsn(), nowMs, this.config, peerId);
                 this.lookup.set(key, id);
                 this.connections.set(id, connection);
                 this.emit(id, segments);
@@ -202,7 +204,7 @@ export class Stack {
         if (connection === undefined)
             return;
         this.connections.delete(id);
-        this.lookup.delete(connectionKey(connection.peer, connection.localPort, connection.remotePort));
+        this.lookup.delete(connectionKey(connection.peerId, connection.localPort, connection.remotePort));
     }
     requireConnection(id) {
         const connection = this.connections.get(id);
@@ -210,10 +212,10 @@ export class Stack {
             throw new Error("unknown connection");
         return connection;
     }
-    ensureConnectionCapacity(peer) {
+    ensureConnectionCapacity(peer, peerId) {
         let peerConnections = 0;
         for (const connection of this.connections.values()) {
-            if (connection.peer === peer)
+            if (connection.peerId === peerId)
                 peerConnections += 1;
         }
         if (this.connections.size >= this.config.maxConnections ||

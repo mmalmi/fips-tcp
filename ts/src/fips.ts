@@ -3,7 +3,10 @@ import { Config, ConnectionId, State } from "./types.js";
 import { MarkerStatus, SendMarker, WriteWithMarkerResult } from "./marker.js";
 
 export interface FipsServiceContext {
+  /** Compressed key used to reply to this source. */
   src: string;
+  /** Authenticated x-only Nostr key, when supplied by the FIPS runtime. */
+  peerId?: string;
   srcPort: number;
   dstPort: number;
   payload: Uint8Array;
@@ -39,7 +42,9 @@ export class FipsTcpEndpoint {
     this.stack.listen(fspServicePort);
     this.unregister = endpoint.registerService(fspServicePort, (context) =>
       this.enqueue(async () => {
-        this.stack.input(context.src, context.payload, Date.now());
+        const id = fipsPeerId(context.src);
+        if (context.peerId !== undefined && context.peerId !== id) return;
+        this.stack.input(context.src, context.payload, Date.now(), context.peerId ?? id);
         await this.flush();
       }),
     );
@@ -56,7 +61,7 @@ export class FipsTcpEndpoint {
 
   async connect(peer: string, nowMs = Date.now()): Promise<ConnectionId> {
     return this.enqueue(async () => {
-      const id = this.stack.connect(peer, this.fspServicePort, nowMs);
+      const id = this.stack.connect(peer, this.fspServicePort, nowMs, fipsPeerId(peer));
       try {
         await this.flush();
       } catch (error) {
@@ -170,6 +175,11 @@ export class FipsTcpEndpoint {
     );
     return result;
   }
+}
+
+/** Structural endpoints may also use opaque, case-sensitive peer names. */
+function fipsPeerId(peer: string): string | undefined {
+  return /^(?:02|03)[0-9a-f]{64}$/i.test(peer) ? peer.slice(2).toLowerCase() : undefined;
 }
 
 function checkFspServicePort(port: number): void {
