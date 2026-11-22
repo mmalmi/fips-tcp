@@ -26,7 +26,9 @@ class MemoryEndpoint implements FipsDatagramEndpoint {
     if (this.dropped || remote?.dropped) return
     const handler = remote?.handlers.get(args.dstPort)
     if (!handler) return
-    queueMicrotask(() => void handler({ src: this.id, srcPort: args.srcPort ?? 0,
+    // Exercise an authenticated modern sender alongside a legacy runtime.
+    const identity = this.id.startsWith('03') ? { peerId: this.id.slice(2) } : {}
+    queueMicrotask(() => void handler({ src: this.id, ...identity, srcPort: args.srcPort ?? 0,
       dstPort: args.dstPort, payload: args.payload.slice() }))
   }
 }

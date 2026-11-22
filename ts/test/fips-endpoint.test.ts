@@ -165,8 +165,14 @@ test("reservation rejects only new tuples and preserves later carrier operations
   }
 });
 
-test.each([true, false])("matches both FIPS key parities on one TCP tuple (runtime peer ID: %s)", async (withId) => {
-  const x = "ab".repeat(32), route = "03" + x, source = "02" + x;
+test.each([
+  { outbound: "03", inbound: "02", withId: true },
+  { outbound: "03", inbound: "02", withId: false },
+  { outbound: "03", inbound: "", withId: true },
+  { outbound: "", inbound: "03", withId: true },
+  { outbound: "", inbound: "", withId: true },
+])("matches FIPS TCP routes ($outbound/$inbound; runtime peer ID: $withId)", async ({ outbound, inbound, withId }) => {
+  const x = "ab".repeat(32), route = outbound + x.toUpperCase(), source = inbound + x;
   let deliver!: ServiceHandler;
   const sent: { dst: string; payload: Uint8Array }[] = [];
   const tcp = new FipsTcpEndpoint({
@@ -182,6 +188,10 @@ test.each([true, false])("matches both FIPS key parities on one TCP tuple (runti
     });
     const context = { src: source, srcPort: fspServicePort, dstPort: fspServicePort,
       payload: reply.encode(), ...(withId ? { peerId: x } : {}) };
+    if (withId) {
+      await deliver({ ...context, peerId: x.slice(0, -1) + "c" });
+      expect(await tcp.state(id)).toBe(State.SynSent);
+    }
     await deliver(context);
     expect(await tcp.state(id)).toBe(State.Established);
     expect(await tcp.peer(id)).toBe(route);

@@ -1,7 +1,7 @@
 import { Config, ConnectionId, State } from "./types.js";
 import { MarkerStatus, SendMarker, WriteWithMarkerResult } from "./marker.js";
 export interface FipsServiceContext {
-    /** Compressed key used to reply to this source. */
+    /** Route used to reply. Adapters may expose an x-only key or an opaque name. */
     src: string;
     /** Authenticated x-only Nostr key, when supplied by the FIPS runtime. */
     peerId?: string;

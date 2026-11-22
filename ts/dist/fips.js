@@ -127,7 +127,7 @@ export class FipsTcpEndpoint {
 }
 /** Structural endpoints may also use opaque, case-sensitive peer names. */
 function fipsPeerId(peer) {
-    return /^(?:02|03)[0-9a-f]{64}$/i.test(peer) ? peer.slice(2).toLowerCase() : undefined;
+    return /^(?:02|03)?[0-9a-f]{64}$/i.test(peer) ? peer.slice(-64).toLowerCase() : undefined;
 }
 function checkFspServicePort(port) {
     if (!Number.isInteger(port) || port <= 0 || port > 0xffff) {

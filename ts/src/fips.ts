@@ -3,7 +3,7 @@ import { Config, ConnectionId, State } from "./types.js";
 import { MarkerStatus, SendMarker, WriteWithMarkerResult } from "./marker.js";
 
 export interface FipsServiceContext {
-  /** Compressed key used to reply to this source. */
+  /** Route used to reply. Adapters may expose an x-only key or an opaque name. */
   src: string;
   /** Authenticated x-only Nostr key, when supplied by the FIPS runtime. */
   peerId?: string;
@@ -179,7 +179,7 @@ export class FipsTcpEndpoint {
 
 /** Structural endpoints may also use opaque, case-sensitive peer names. */
 function fipsPeerId(peer: string): string | undefined {
-  return /^(?:02|03)[0-9a-f]{64}$/i.test(peer) ? peer.slice(2).toLowerCase() : undefined;
+  return /^(?:02|03)?[0-9a-f]{64}$/i.test(peer) ? peer.slice(-64).toLowerCase() : undefined;
 }
 
 function checkFspServicePort(port: number): void {
