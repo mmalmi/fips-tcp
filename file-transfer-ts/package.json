@@ -1,6 +1,6 @@
 {
   "name": "@fips/file-transfer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Recipient-approved resumable file transfers over authenticated FIPS streams",
   "type": "module",
   "main": "dist/index.js",

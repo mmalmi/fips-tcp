@@ -27,7 +27,14 @@ export class DirectFileTcp {
     const endpoint: FipsDatagramEndpoint = {
       registerService: (port, handler) => options.endpoint.registerService(port, context =>
         handler({ ...context, src: normalizePeer(context.src) })),
-      sendDatagram: args => options.endpoint.sendDatagram({ ...args, dst: `02${normalizePeer(args.dst)}` }),
+      sendDatagram: async args => {
+        const dst = `02${normalizePeer(args.dst)}`
+        try {
+          await options.endpoint.sendDatagram({ ...args, dst })
+        } catch {
+          throw new TransportFailure('File connection interrupted')
+        }
+      },
     }
     this.r = { options, localPeer: normalizePeer(options.localPeer),
       tcp: new FipsTcpEndpoint(endpoint, DIRECT_FILE_PORT, {

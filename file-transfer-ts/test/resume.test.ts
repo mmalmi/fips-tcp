@@ -378,3 +378,40 @@ it.each(['dispose', 'cancel', 'revoke'] as const)('preserves shutdown intent whe
     expect(senderStore.claims.get('send/interrupted')?.status).toBe('cancelled')
   }
 })
+
+it('resumes a claimed transfer on a fresh receiver after a datagram send fails', async () => {
+  const id = 'route-loss', senderStore = new Store(), receiverStore = new Store(), disk = new Disk()
+  const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, i) => i % 251)
+  const files = [source('route.bin', bytes)]
+  const sender = device(0, senderStore)
+  let receiver = device(1, receiverStore, disk)
+  const send = sender.endpoint.sendDatagram.bind(sender.endpoint)
+  let interrupted = false
+  sender.endpoint.sendDatagram = async args => {
+    if (!interrupted && disk.writes > 0) {
+      interrupted = true
+      throw new Error('no route to the test recipient')
+    }
+    await send(args)
+  }
+
+  sender.engine.registerOffer(id, token, [peers[1]], files, { version: 2 })
+  await receiver.engine.receive(id, token, peers[0], files, { version: 2 })
+  await until(() => sender.events.some(e => e.type === 'paused' || e.type === 'failed'))
+  expect(interrupted).toBe(true)
+  expect(senderStore.claims.get('send/' + id)?.status).toBe('claimed')
+  expect(event(sender.events, 'paused')).toBeDefined()
+  await receiver.engine.dispose()
+  const retained = disk.files.get(0)!.length
+  expect(retained).toBeGreaterThan(0)
+  expect(retained).toBeLessThan(bytes.length)
+  expect(receiverStore.claims.get('receive/' + id)?.status).toBe('claimed')
+
+  receiver = device(1, receiverStore, disk)
+  await receiver.engine.receive(id, token, peers[0], files, { version: 2 })
+  await until(() => !!event(sender.events, 'completed') && !!event(receiver.events, 'completed'))
+  expect(event(sender.events, 'accepted')?.transferredBytes).toBe(retained)
+  expect(Buffer.from(disk.files.get(0)!).equals(Buffer.from(bytes))).toBe(true)
+  expect(senderStore.claims.get('send/' + id)?.status).toBe('completed')
+  expect(receiverStore.claims.get('receive/' + id)?.status).toBe('completed')
+})
